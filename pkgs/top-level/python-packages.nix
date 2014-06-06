@@ -2002,6 +2002,32 @@ rec {
   };
 
 
+  pbr = buildPythonPackage rec {
+    name = "pbr-${version}";
+    version = "0.8.2";
+
+    src = fetchurl {
+      url = "https://pypi.python.org/packages/source/p/pbr/pbr-${version}.tar.gz";
+      sha256 = "eef2ace8d65d5902582cbc9ad3b2ecff0e86a6f90ad4837d8b17d568dd9dd20e";
+    };
+
+    doCheck = false;
+
+    buildInputs = [ pip testtools ];
+
+    meta = {
+      homepage = http://docs.openstack.org/developer/pbr/;
+      license = "apache";
+      description = "A library for managing setuptools packaging needs in a consistent manner.";
+      longDescription = ''
+        pbr stands for Python Build Reasonableness. It is a library used by
+        OpenStack projects to manage setuptools consistently across those
+        projects without duplicating effort.
+      '';
+    };
+  };
+
+
   peppercorn = buildPythonPackage rec {
     name = "peppercorn-0.4";
 
@@ -4580,6 +4606,38 @@ rec {
       maintainers = [ stdenv.lib.maintainers.garbas ];
     };
   };
+
+
+  novaclient = buildPythonPackage rec {
+    name = "novaclient-${version}";
+    version = "3dff4cf1c2d535c29eaff064e9eea17e358392f7";
+
+    src = fetchurl {
+      url = "https://github.com/openstack/python-novaclient/archive/${version}.tar.gz";
+      sha256 = "378ec89f418abdb65487829bfe4304521557e269a8cb29c0290180a6c26104af";
+    };
+
+    buildInputs = [ pbr ];
+
+    doCheck = false;
+
+    sourceRoot = "python-novaclient-${version}";
+
+    meta = {
+      homepage = https://github.com/openstack/python-novaclient;
+
+      license = "apache";
+
+      description = "Client and Python API for the OpenStack Nova API";
+
+      longDescription = ''
+        The novaclient module provides both a command-line interface to the
+        OpenStack Nova API, as well as Python bindings to the API. OpenStack
+        was created by Rackspace and is used by many other hosting providers.
+      '';
+    };
+  };
+
 
   numpy = buildPythonPackage ( rec {
     name = "numpy-1.7.1";
