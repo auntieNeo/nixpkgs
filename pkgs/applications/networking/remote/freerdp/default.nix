@@ -50,6 +50,11 @@ stdenv.mkDerivation rec {
   ] ++ stdenv.lib.optional printerSupport "--with-printer=cups"
     ++ stdenv.lib.optional pulseaudioSupport "-DWITH_PULSEAUDIO=ON";
 
+ /* uses pthread_cancel(), which requires libgcc_s.so.1 to be
+    loadable at run-time. Adding the flag below ensures that the
+    library can be found. Obviously, though, this is a hack. */
+  NIX_LDFLAGS="-lgcc_s";
+
   meta = {
     description = "A Remote Desktop Protocol Client";
 
