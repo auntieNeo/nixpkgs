@@ -5057,6 +5057,7 @@ rec {
       sha256 = "0j700f70mj0brdlvs2cz4a7h4jwmzgymgp8qk1qb3lsm1qd1vy15";
     };
     buildInputs = [ mock scripttest virtualenv pytest ];
+    patches = [ ../development/python-modules/pip-homeless-fix.patch ];
   };
 
 

@@ -1,0 +1,19 @@
+diff --git a/pip/_vendor/distlib/util.py b/pip/_vendor/distlib/util.py
+index 63cd313..853ef49 100644
+--- a/pip/_vendor/distlib/util.py
++++ b/pip/_vendor/distlib/util.py
+@@ -590,12 +590,8 @@ def get_cache_base(suffix=None):
+     """
+     if suffix is None:
+         suffix = '.distlib'
+-    if os.name == 'nt' and 'LOCALAPPDATA' in os.environ:
+-        result = os.path.expandvars('$localappdata')
+-    else:
+-        # Assume posix, or old Windows
+-        result = os.path.expanduser('~')
+-    result = os.path.join(result, suffix)
++    # cache directory suitable for Nix
++    result = os.path.join('./', suffix)
+     # we use 'isdir' instead of 'exists', because we want to
+     # fail if there's a file with that name
+     if not os.path.isdir(result):
