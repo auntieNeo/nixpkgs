@@ -4937,19 +4937,19 @@ rec {
   };
 
 
-  pexpect = buildPythonPackage {
-    name = "pexpect-2.3";
+  pexpect = buildPythonPackage rec {
+    name = "pexpect-${version}";
+    version = "3.2";
 
     src = fetchurl {
-      url = "mirror://sourceforge/pexpect/pexpect-2.3.tar.gz";
-      sha256 = "0x8bfjjqygriry1iyygm5048ykl5qpbpzqfp6i8dhkslm3ryf5fk";
+      url = "https://pypi.python.org/packages/source/p/pexpect/pexpect-${version}.tar.gz";
+      sha256 = "dbc4c9a01c118e198d1b6ca76f31eb7292f212567f253e6b36a880e5168e961f";
     };
 
-    # error: invalid command 'test'
-    doCheck = false;
+    doCheck = true;
 
     meta = {
-      homepage = "http://www.noah.org/wiki/Pexpect";
+      homepage = "http://pexpect.readthedocs.org/en/latest/";
       description = "Automate interactive console applications such as ssh, ftp, etc.";
       license = "MIT";
 
