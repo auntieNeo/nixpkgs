@@ -4617,14 +4617,14 @@ rec {
       sha256 = "378ec89f418abdb65487829bfe4304521557e269a8cb29c0290180a6c26104af";
     };
 
-    buildInputs = [ pbr ];
+    buildInputs = [ pbr pip ];
 
     doCheck = false;
 
     sourceRoot = "python-novaclient-${version}";
 
     meta = {
-      homepage = https://github.com/openstack/python-novaclient;
+      homepage = "https://github.com/openstack/python-novaclient";
 
       license = "apache";
 
