@@ -4623,10 +4623,6 @@ rec {
 
     sourceRoot = "python-novaclient-${version}";
 
-#    preBuild = ''
-#      sed -i '/files/,/upload-dir/d' ./setup.cfg
-#    '';
-
     meta = {
       homepage = "https://github.com/openstack/python-novaclient";
 
