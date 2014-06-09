@@ -4939,12 +4939,14 @@ rec {
 
   pexpect = buildPythonPackage rec {
     name = "pexpect-${version}";
-    version = "3.2";
+    version = "8aea7ddba7b8d9b1698f17a1895dcaf6730f79d9";
 
     src = fetchurl {
-      url = "https://pypi.python.org/packages/source/p/pexpect/pexpect-${version}.tar.gz";
-      sha256 = "dbc4c9a01c118e198d1b6ca76f31eb7292f212567f253e6b36a880e5168e961f";
+      url = "https://github.com/pexpect/pexpect/tarball/${version}";
+      sha256 = "2b156a056b86646ab93c2cfbcb1b2ac231ee9e3959fc192143afe98a1acc1690";
     };
+
+    unpackCmd = "tar xzf $src";
 
     doCheck = true;
 
