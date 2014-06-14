@@ -2017,13 +2017,14 @@ rec {
 
     meta = {
       homepage = http://docs.openstack.org/developer/pbr/;
-      license = "apache";
+      license = stdenv.lib.licenses.asl20;
       description = "A library for managing setuptools packaging needs in a consistent manner.";
       longDescription = ''
         pbr stands for Python Build Reasonableness. It is a library used by
         OpenStack projects to manage setuptools consistently across those
         projects without duplicating effort.
       '';
+      maintainers = [ stdenv.lib.maintainers.auntie ];
     };
   };
 
@@ -3624,6 +3625,7 @@ rec {
     meta = {
       homepage = https://bitbucket.org/micktwomey/pyiso8601/;
       description = "Simple module to parse ISO 8601 dates";
+      license = stdenv.lib.licenses.mit;
       maintainers = [ stdenv.lib.maintainers.auntie ];
     };
   };
@@ -4639,7 +4641,7 @@ rec {
     meta = {
       homepage = "https://github.com/openstack/python-novaclient";
 
-      license = "apache";
+      license = stdenv.lib.licenses.asl20;
 
       description = "Client and Python API for the OpenStack Nova API";
 
@@ -4648,6 +4650,8 @@ rec {
         OpenStack Nova API, as well as Python bindings to the API. OpenStack
         was created by Rackspace and is used by many other hosting providers.
       '';
+
+      maintainers = [ stdenv.lib.maintainers.auntie ];
     };
   };
 
@@ -7059,7 +7063,6 @@ rec {
       sha256 = "c7b85e433ecf2f2df37edb017b954c468342991e1883c8a1e8d8616584b69998";
     };
 
-    # error: invalid command 'test'
     doCheck = true;
 
     meta = {
