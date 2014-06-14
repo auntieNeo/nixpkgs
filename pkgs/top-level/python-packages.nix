@@ -3614,6 +3614,20 @@ rec {
     propagatedBuildInputs = [ pythonPackages.nose pythonPackages.ipythonLight ];
   };
 
+  iso8601 = buildPythonPackage {
+    name = "iso8601-0.1.10";
+    src = fetchurl {
+      url = https://pypi.python.org/packages/source/i/iso8601/iso8601-0.1.10.tar.gz;
+      sha256 = "e712ff3a18604833f5073e836aad795b21170b19bbef70947c441ed89d0ac0e1";
+    };
+
+    meta = {
+      homepage = https://bitbucket.org/micktwomey/pyiso8601/;
+      description = "Simple module to parse ISO 8601 dates";
+      maintainers = [ stdenv.lib.maintainers.auntie ];
+    };
+  };
+
   iso8601_0_1_4 = buildPythonPackage {
     name = "iso8601-0.1.4";
     src = fetchurl {
@@ -4610,18 +4624,16 @@ rec {
 
   novaclient = buildPythonPackage rec {
     name = "novaclient-${version}";
-    version = "3dff4cf1c2d535c29eaff064e9eea17e358392f7";
+    version = "2.17.0";
 
     src = fetchurl {
-      url = "https://github.com/openstack/python-novaclient/archive/${version}.tar.gz";
-      sha256 = "378ec89f418abdb65487829bfe4304521557e269a8cb29c0290180a6c26104af";
+      url = "https://pypi.python.org/packages/source/p/python-novaclient/python-novaclient-${version}.tar.gz";
+      sha256 = "af6f46890715eb5f4e0d25a714effbbac8da020715f81b1572a301c5e9887197";
     };
 
-    buildInputs = [ pbr pip ];
+    buildInputs = [ Babel iso8601 pbr pip prettytable pytz requests simplejson six ];
 
     doCheck = false;
-
-    sourceRoot = "python-novaclient-${version}";
 
     meta = {
       homepage = "https://github.com/openstack/python-novaclient";
@@ -7039,15 +7051,15 @@ rec {
 
 
   six = buildPythonPackage rec {
-    name = "six-1.3.0";
+    name = "six-1.7.2";
 
     src = fetchurl {
       url = "http://pypi.python.org/packages/source/s/six/${name}.tar.gz";
-      md5 = "ec47fe6070a8a64c802363d2c2b1e2ee";
+      sha256 = "c7b85e433ecf2f2df37edb017b954c468342991e1883c8a1e8d8616584b69998";
     };
 
     # error: invalid command 'test'
-    doCheck = false;
+    doCheck = true;
 
     meta = {
       description = "A Python 2 and 3 compatibility library";
