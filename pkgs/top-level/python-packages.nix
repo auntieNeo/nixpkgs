@@ -4632,6 +4632,7 @@ rec {
     };
 
     buildInputs = [ Babel iso8601 pbr pip prettytable pytz requests simplejson six ];
+    propagatedBuildInputs = [ Babel iso8601 pbr prettytable requests six ];
 
     doCheck = false;
 
