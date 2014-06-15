@@ -4940,6 +4940,86 @@ rec {
   };
 
 
+  os_diskconfig_python_novaclient_ext = buildPythonPackage rec {
+    name = "os_diskconfig_python_novaclient_ext-${version}";
+    version = "0.1.2";
+
+    src = fetchurl {
+      url = "https://pypi.python.org/packages/source/o/os_diskconfig_python_novaclient_ext/os_diskconfig_python_novaclient_ext-${version}.tar.gz";
+      sha256 = "78076a7b05afb8842734329f306bd69e64af6af910a3bc973fcf023723b8d7fc";
+    };
+
+    buildInputs = [ novaclient pip simplejson ];
+
+    meta = {
+      homepage = https://github.com/rackerlabs/os_diskconfig_python_novaclient_ext;
+      license = stdenv.lib.licenses.asl20;
+      description = "Disk Config extension for python-novaclient";
+      maintainers = [ stdenv.lib.maintainers.auntie ];
+    };
+  };
+
+
+  os_networks_python_novaclient_ext = buildPythonPackage rec {
+    name = "os_networks_python_novaclient_ext-${version}";
+    version = "0.32";
+
+    src = fetchurl {
+      url = "https://pypi.python.org/packages/source/o/os_networks_python_novaclient_ext/os_networks_python_novaclient_ext-${version}.tar.gz";
+      sha256 = "af35b456a9546f365e9aa81376c473d8b1664b170326c0d26b8784e71d11ff28";
+    };
+
+    buildInputs = [ novaclient pip simplejson ];
+
+    meta = {
+      homepage = https://github.com/rackerlabs/os_networks_python_novaclient_ext;
+      license = stdenv.lib.licenses.asl20;
+      description = "Adds network extension support to python-novaclient";
+      maintainers = [ stdenv.lib.maintainers.auntie ];
+    };
+  };
+
+
+  os_networksv2_python_novaclient_ext = buildPythonPackage rec {
+    name = "os_networksv2_python_novaclient_ext-${version}";
+    version = "0.21";
+
+    src = fetchurl {
+      url = "https://pypi.python.org/packages/source/o/os_networksv2_python_novaclient_ext/os_networksv2_python_novaclient_ext-${version}.tar.gz";
+      sha256 = "2598aaaf19a6897be8427a402bb10b772178ed3c8922d9d955fa411ed8ec11a8";
+    };
+
+    buildInputs = [ novaclient pip simplejson ];
+
+    meta = {
+      homepage = https://github.com/rackerlabs/os_networksv2_python_novaclient_ext;
+      license = stdenv.lib.licenses.asl20;
+      description = "Adds network extension support to python-novaclient";
+      maintainers = [ stdenv.lib.maintainers.auntie ];
+    };
+  };
+
+
+  os_virtual_interfacesv2_python_novaclient_ext = buildPythonPackage rec {
+    name = "os_virtual_interfacesv2_python_novaclient_ext-${version}";
+    version = "0.15";
+
+    src = fetchurl {
+      url = "https://pypi.python.org/packages/source/o/os_virtual_interfacesv2_python_novaclient_ext/os_virtual_interfacesv2_python_novaclient_ext-${version}.tar.gz";
+      sha256 = "7d6c1371750568efc0f8a02e2b8d18fa885b9289ed25228252a2a6a5f0e53480";
+    };
+
+    buildInputs = [ novaclient pip simplejson ];
+
+    meta = {
+      homepage = https://github.com/cerberus98/os_virtual_interfacesv2_ext;
+      license = stdenv.lib.licenses.asl20;
+      description = "Adds virtual interface extension support to python-novaclient";
+      maintainers = [ stdenv.lib.maintainers.auntie ];
+    };
+  };
+
+
   paste = buildPythonPackage rec {
     name = "paste-1.7.5.1";
 
@@ -6256,6 +6336,98 @@ rec {
       license = "free"; # !?
     };
   });
+
+
+  rackspace-auth-openstack = buildPythonPackage rec {
+    name = "rackspace-auth-openstack-${version}";
+    version = "1.3";
+
+    src = fetchurl {
+      url = "https://pypi.python.org/packages/source/r/rackspace-auth-openstack/rackspace-auth-openstack-${version}.tar.gz";
+      sha256 = "c4c069eeb1924ea492c50144d8a4f5f1eb0ece945e0c0d60157cabcadff651cd";
+    };
+
+    buildInputs = [ novaclient pip simplejson ];
+
+    meta = {
+      homepage = https://github.com/rackerlabs/rackspace-auth-openstack;
+      license = stdenv.lib.licenses.asl20;
+      description = "Provides client support for Rackspace authentication extensions";
+      maintainers = [ stdenv.lib.maintainers.auntie ];
+    };
+  };
+
+
+  rackspace-novaclient = buildPythonPackage rec {
+    name = "rackspace-novaclient-${version}";
+    version = "1.4";
+
+    src = fetchurl {
+      url = "https://pypi.python.org/packages/source/r/rackspace-novaclient/rackspace-novaclient-1.4.tar.gz";
+      sha256 = "68e1f53411b635f836a53d09e6c85f6a7d5d69d39df2e25a745406140cd5c275";
+    };
+
+    buildInputs = [ novaclient
+      os_diskconfig_python_novaclient_ext 
+#      os_networks_python_novaclient_ext 
+      os_networksv2_python_novaclient_ext 
+      os_virtual_interfacesv2_python_novaclient_ext
+      pip
+      rackspace-auth-openstack 
+      rax_default_network_flags_python_novaclient_ext
+      rax_scheduled_images_python_novaclient_ext 
+      simplejson
+      ];
+
+    propagatedBuildInputs = [ novaclient ];
+
+    meta = {
+      homepage = https://github.com/rackerlabs/rackspace-novaclient;
+      license = stdenv.lib.licenses.asl20;
+      description = "Metapackage with python-novaclient and Rackspace extensions";
+      maintainers = [ stdenv.lib.maintainers.auntie ];
+    };
+  };
+
+
+  rax_default_network_flags_python_novaclient_ext = buildPythonPackage rec {
+    name = "rax_default_network_flags_python_novaclient_ext-${version}";
+    version = "0.2.4";
+
+    src = fetchurl {
+      url = "https://pypi.python.org/packages/source/r/rax_default_network_flags_python_novaclient_ext/rax_default_network_flags_python_novaclient_ext-${version}.tar.gz";
+      sha256 = "998153d3fa1e4abd938111bc9635770ce50772d7438fd0702f7bb7d5c8748b30";
+    };
+
+    buildInputs = [ novaclient pip simplejson ];
+
+    meta = {
+      homepage = https://github.com/rackerlabs/rax_default_network_flags_python_novaclient_ext;
+      license = stdenv.lib.licenses.asl20;
+      description = "Adds instance default networks extension support to python-novaclient.";
+      maintainers = [ stdenv.lib.maintainers.auntie ];
+    };
+  };
+
+
+  rax_scheduled_images_python_novaclient_ext = buildPythonPackage rec {
+    name = "rax_scheduled_images_python_novaclient_ext-${version}";
+    version = "0.2.2";
+
+    src = fetchurl {
+      url = "https://pypi.python.org/packages/source/r/rax_scheduled_images_python_novaclient_ext/rax_scheduled_images_python_novaclient_ext-${version}.tar.gz";
+      sha256 = "2a0e322c9fb038456f51a9d4e6059154395a11137466cb3e8095d1b72ed05ca5";
+    };
+
+    buildInputs = [ novaclient pip simplejson ];
+
+    meta = {
+      homepage = https://github.com/rackerlabs/rax_scheduled_images_python_novaclient_ext;
+      license = stdenv.lib.licenses.asl20;
+      description = "Nova client extension to the scheduled images Nova API extension";
+      maintainers = [ stdenv.lib.maintainers.auntie ];
+    };
+  };
 
 
   recaptcha_client = buildPythonPackage rec {
