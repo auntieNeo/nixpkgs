@@ -4,18 +4,18 @@
 assert stdenv.system == "x86_64-linux" || stdenv.system == "i686-linux";
 
 stdenv.mkDerivation rec {
-  name = "vagrant-1.4.3";
+  name = "vagrant-1.6.3";
 
   src =
     if stdenv.system == "x86_64-linux" then
       fetchurl {
-        url    = https://dl.bintray.com/mitchellh/vagrant/vagrant_1.4.3_x86_64.deb;
-        sha256 = "dbd06de0f3560e2d046448d627bca0cbb0ee34b036ef605aa87ed20e6ad2684b";
+        url    = https://dl.bintray.com/mitchellh/vagrant/vagrant_1.6.3_x86_64.deb;
+        sha256 = "0fc3259cf08b693e3383636256734513ee93bf258f8328efb64e1dde447aadbe";
       }
     else
       fetchurl {
-        url    = https://dl.bintray.com/mitchellh/vagrant/vagrant_1.4.3_i686.deb;
-        sha256 = "66e613fc1c9e31ecaf8e5f1d07d2ae4fca3d4fc2e43593543962664258d9af9b";
+        url    = https://dl.bintray.com/mitchellh/vagrant/vagrant_1.6.3_i686.deb;
+        sha256 = "c0aced1a5efb50af8edc22d2970cf23f1b48e624ee45119744fd61f8bc5946fc";
       };
 
   meta = with stdenv.lib; {
