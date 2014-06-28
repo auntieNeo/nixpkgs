@@ -5505,6 +5505,8 @@ let
 
   libwebp = callPackage ../development/libraries/libwebp { };
 
+  libwld = callPackage ../development/libraries/libwld { };
+
   libwmf = callPackage ../development/libraries/libwmf { };
 
   libwnck = libwnck2;
