@@ -5104,6 +5104,8 @@ let
 
   libev = builderDefsPackage ../development/libraries/libev { };
 
+  libevdev = callPackage ../development/libraries/libevdev { };
+
   libevent14 = callPackage ../development/libraries/libevent/1.4.nix { };
   libevent = callPackage ../development/libraries/libevent { };
 
@@ -5506,6 +5508,7 @@ let
   libwebp = callPackage ../development/libraries/libwebp { };
 
   libwld = callPackage ../development/libraries/libwld { };
+  libswc = callPackage ../development/libraries/libswc { };
 
   libwmf = callPackage ../development/libraries/libwmf { };
 

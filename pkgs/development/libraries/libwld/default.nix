@@ -17,7 +17,7 @@ stdenv.mkDerivation rec {
     wayland
   ];
 
-  makeFlags = "-e PREFIX=\${out}/usr";
+  makeFlags = "-e PREFIX=\${out}";
 
   meta = {
     description = "A primitive drawing library targeted at Wayland";
