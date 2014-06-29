@@ -1,4 +1,4 @@
-{ stdenv, fetchurl, fontconfig, libdrm, libevdev, libwld, libxcb, libxkbcommon, pixman, pkgconfig, udev, wayland, ... }:
+{ stdenv, fetchurl, fontconfig, libdrm, libevdev, libwld, libxcb, libxkbcommon, pixman, pkgconfig, udev, wayland, xcbutilwm, ... }:
 
 stdenv.mkDerivation rec {
   name = "libswc-${version}";
@@ -20,9 +20,10 @@ stdenv.mkDerivation rec {
     pkgconfig
     udev
     wayland
+    xcbutilwm
   ];
 
-#  makeFlags = "-e PREFIX=\${out}/usr";
+  makeFlags = "-e PREFIX=\${out}";
 
   meta = {
     description = "A library for making a simple Wayland compositor";
