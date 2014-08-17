@@ -15,14 +15,6 @@
 }:
 
 let
-  archInfo = with stdenv.lib; optionalAttrs (stdenv.system == "i686-linux") {
-    target_arch = "ia32";
-    python_arch = "ia32";
-  } // optionalAttrs (stdenv.system == "x86_64-linux") {
-    target_arch = "x64";
-    python_arch = "x86-64";
-  };
-
   callPackage = newScope chromium;
 
   chromium = {
@@ -35,13 +27,10 @@ let
     mkChromiumDerivation = callPackage ./common.nix {
       inherit enableSELinux enableNaCl useOpenSSL gnomeSupport
               gnomeKeyringSupport proprietaryCodecs cupsSupport
-              pulseSupport archInfo;
+              pulseSupport;
     };
 
-    browser = callPackage ./browser.nix {
-      arch = archInfo.target_arch;
-    };
-
+    browser = callPackage ./browser.nix { };
     sandbox = callPackage ./sandbox.nix { };
 
     plugins = callPackage ./plugins.nix {
@@ -78,7 +67,7 @@ in stdenv.mkDerivation {
     browserBinary = "${chromium.browser}/libexec/chromium/chromium";
     sandboxBinary = "${chromium.sandbox}/bin/chromium-sandbox";
   in ''
-    ensureDir "$out/bin" "$out/share/applications"
+    mkdir -p "$out/bin" "$out/share/applications"
 
     ln -s "${chromium.browser}/share" "$out/share"
     makeWrapper "${browserBinary}" "$out/bin/chromium" \

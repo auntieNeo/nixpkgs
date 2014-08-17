@@ -88,6 +88,8 @@
     url = http://www.eclipse.org/legal/epl-v10.html;
   };
 
+  free = "free";
+
   gpl2 = {
     shortName = "GPLv2";
     fullName = "GNU General Public License version 2";
@@ -248,6 +250,12 @@
   unfreeRedistributable = "unfree-redistributable";
 
   unfreeRedistributableFirmware = "unfree-redistributable-firmware";
+
+  wadalab = {
+    shortName = "wadalab";
+    fullName = "Wadalab Font License";
+    url = https://fedoraproject.org/wiki/Licensing:Wadalab?rd=Licensing/Wadalab;
+  };
 
   zlib = {
     shortName = "zlib";
