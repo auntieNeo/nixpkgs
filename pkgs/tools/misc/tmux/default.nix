@@ -22,7 +22,7 @@ stdenv.mkDerivation rec {
 
   meta = {
     homepage = http://tmux.sourceforge.net/;
-    description = "tmux is a terminal multiplexer";
+    description = "Terminal multiplexer";
 
     longDescription =
       '' tmux is intended to be a modern, BSD-licensed alternative to programs such as GNU screen. Major features include:
@@ -35,7 +35,7 @@ stdenv.mkDerivation rec {
           * Interactive menus to select windows, sessions or clients.
           * Change the current window by searching for text in the target.
           * Terminal locking, manually or after a timeout.
-          * A clean, easily extended, BSD-licensed codebase, under active development. 
+          * A clean, easily extended, BSD-licensed codebase, under active development.
       '';
 
     license = stdenv.lib.licenses.bsd3;

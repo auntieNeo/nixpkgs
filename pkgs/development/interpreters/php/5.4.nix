@@ -9,7 +9,7 @@ in
 
 composableDerivation.composableDerivation {} ( fixed : let inherit (fixed.fixed) version; in {
 
-  version = "5.4.31";
+  version = "5.4.33";
 
   name = "php-${version}";
 
@@ -74,6 +74,11 @@ composableDerivation.composableDerivation {} ( fixed : let inherit (fixed.fixed)
 
       postgresql = {
         configureFlags = ["--with-pgsql=${postgresql}"];
+        buildInputs = [ postgresql ];
+      };
+
+      pdo_pgsql = {
+        configureFlags = ["--with-pdo-pgsql=${postgresql}"];
         buildInputs = [ postgresql ];
       };
 
@@ -203,6 +208,7 @@ composableDerivation.composableDerivation {} ( fixed : let inherit (fixed.fixed)
     gettextSupport = config.php.gettext or true;
     pcntlSupport = config.php.pcntl or true;
     postgresqlSupport = config.php.postgresql or true;
+    pdo_pgsqlSupport = config.php.pdo_pgsql or true;
     readlineSupport = config.php.readline or true;
     sqliteSupport = config.php.sqlite or true;
     soapSupport = config.php.soap or true;
@@ -243,11 +249,11 @@ composableDerivation.composableDerivation {} ( fixed : let inherit (fixed.fixed)
 
   src = fetchurl {
     url = "http://www.php.net/distributions/php-${version}.tar.bz2";
-    sha256 = "0kci0yir923fc7dv7j9qrc10pj05v82jnxjxjbgrj7gx64a4k3jy";
+    sha256 = "1d8bwiw24k5p34fzkdqv8j8ndq50k2ahv66kdj4bhx2yhg8b4x8s";
   };
 
   meta = {
-    description = "The PHP language runtime engine";
+    description = "An HTML-embedded scripting language";
     homepage = http://www.php.net/;
     license = "PHP-3";
   };

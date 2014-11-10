@@ -12,6 +12,8 @@ import ./make-test.nix {
       services.xserver.displayManager.auto.user = "alice";
       services.xserver.desktopManager.gnome3.enable = true;
       environment.gnome3.packageSet = pkgs.gnome3_12;
+
+      virtualisation.memorySize = 512;
     };
 
   testScript =
@@ -24,7 +26,7 @@ import ./make-test.nix {
 
       $machine->succeed("su - alice -c 'DISPLAY=:0.0 gnome-terminal &'");
       $machine->waitForWindow(qr/Terminal/);
-      $machine->sleep(10);
+      $machine->sleep(20);
       $machine->screenshot("screen");
     '';
 

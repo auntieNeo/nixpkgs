@@ -8,8 +8,8 @@
 
 cabal.mkDerivation (self: {
   pname = "rest-core";
-  version = "0.31.1";
-  sha256 = "1cx1zmy1zr43n9nlrbar828izccpkvrvjkrda03ra9fkcjgd6qy6";
+  version = "0.33.1";
+  sha256 = "0vrxdfnv53f65nifvvjj961h9nj7dlbfwk5y21zy9cl5w0dbg5yy";
   buildDepends = [
     aeson aesonUtils either errors fclabels hxt hxtPickleUtils
     jsonSchema mtl multipart random restStringmap restTypes safe split
@@ -23,5 +23,6 @@ cabal.mkDerivation (self: {
     description = "Rest API library";
     license = self.stdenv.lib.licenses.bsd3;
     platforms = self.ghc.meta.platforms;
+    maintainers = with self.stdenv.lib.maintainers; [ aycanirican ];
   };
 })

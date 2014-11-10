@@ -9,7 +9,7 @@ stdenv.mkDerivation rec {
 
   src = fetchurl {
     url = "ftp://ftp.fox-toolkit.org/pub/${name}.tar.gz";
-    md5 = "b5897e9c664967f5042e57070037ff18";
+    sha256 = "1jb9368xsin3ppdf6979n5s7in3s9klbxqbwcp0z8misjixl7nzg";
   };
 
   buildInputs = [ libpng x11 libjpeg libtiff zlib bzip2 libXcursor libXrandr libXft ];
@@ -19,7 +19,7 @@ stdenv.mkDerivation rec {
   enableParallelBuilding = true;
 
   meta = {
-    description = "FOX is a C++ based class library for building Graphical User Interfaces";
+    description = "C++ based class library for building Graphical User Interfaces";
     longDescription = ''
         FOX stands for Free Objects for X.
         It is a C++ based class library for building Graphical User Interfaces.

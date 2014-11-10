@@ -3,13 +3,13 @@
 
 
 stdenv.mkDerivation rec {
-  name = "utox-dev";
+  name = "utox-dev-20140921";
 
   src = fetchFromGitHub {
     owner = "notsecure";
     repo = "uTox";
-    rev = "d70f9bfb4ff8a156ec35803da6226b0ac8c47961";
-    sha256 = "10cvsg0phv0jsrdl3zkk339c4bzn3xc82q1x90h6gcnrbg4vzmp0";
+    rev = "c0afc95cf3";
+    sha256 = "0a6i0c9crj6b27alm8q0fcfj8q425khg5305sp57r7pj505l4d1f";
   };
 
   buildInputs = [ pkgconfig libtoxcore dbus libvpx libX11 openal freetype
@@ -17,7 +17,7 @@ stdenv.mkDerivation rec {
 
   doCheck = false;
   
-  makeFlags = "DESTDIR=$(out)";
+  makeFlags = "PREFIX=$(out)";
 
   meta = with stdenv.lib; {
     description = "Lightweight Tox client";

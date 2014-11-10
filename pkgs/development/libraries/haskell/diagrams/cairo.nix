@@ -7,8 +7,8 @@
 
 cabal.mkDerivation (self: {
   pname = "diagrams-cairo";
-  version = "1.2";
-  sha256 = "0vzjp1i5hk971r7f55gpdl0jibrjg9j4ny7p408kb8zl2ynlxv6l";
+  version = "1.2.0.3";
+  sha256 = "00x759n6jn8cpf49ma3mfs4v77g535cpjr5vcc81am37a3vq3ypk";
   buildDepends = [
     cairo colour dataDefaultClass diagramsCore diagramsLib filepath
     hashable JuicyPixels lens mtl optparseApplicative pango split
@@ -20,5 +20,6 @@ cabal.mkDerivation (self: {
     description = "Cairo backend for diagrams drawing EDSL";
     license = self.stdenv.lib.licenses.bsd3;
     platforms = self.ghc.meta.platforms;
+    maintainers = with self.stdenv.lib.maintainers; [ bergey ];
   };
 })

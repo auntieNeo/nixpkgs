@@ -82,7 +82,7 @@
       statsd = 69;
       transmission = 70;
       postgres = 71;
-      smbguest = 74;
+      smbguest = 74;  # unused
       varnish = 75;
       datadog = 76;
       lighttpd = 77;
@@ -141,6 +141,22 @@
       unifi = 131;
       gdm = 132;
       dhcpd = 133;
+      siproxd = 134;
+      mlmmj = 135;
+      neo4j = 136;
+      riemann = 137;
+      riemanndash = 138;
+      radvd = 139;
+      zookeeper = 140;
+      dnsmasq = 141;
+      uhub = 142;
+      yandexdisk = 143;
+      collectd = 144;
+      consul = 145;
+      mailpile = 146;
+      redmine = 147;
+      seeks = 148;
+      prosody = 149;
 
       # When adding a uid, make sure it doesn't match an existing gid. And don't use uids above 399!
 
@@ -209,7 +225,7 @@
       postgres = 71;
       vboxusers = 72;
       vboxsf = 73;
-      smbguest = 74;
+      smbguest = 74;  # unused
       varnish = 75;
       datadog = 76;
       lighttpd = 77;
@@ -256,6 +272,15 @@
       docker = 131;
       gdm = 132;
       tss = 133;
+      siproxd = 134;
+      mlmmj = 135;
+      riemann = 137;
+      riemanndash = 138;
+      uhub = 142;
+      mailpile = 146;
+      redmine = 147;
+      seeks = 148;
+      prosody = 149;
 
       # When adding a gid, make sure it doesn't match an existing uid. And don't use gids above 399!
 

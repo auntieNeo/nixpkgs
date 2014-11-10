@@ -40,12 +40,12 @@ let
   withToolset = stdenv.lib.optionalString (toolset != null) " --with-toolset=${toolset}";
 in
 
-stdenv.mkDerivation {
+let res = stdenv.mkDerivation {
   name = "boost-1.55.0";
 
   meta = {
     homepage = "http://boost.org/";
-    description = "Boost C++ Library Collection";
+    description = "Collection of C++ libraries";
     license = "boost-license";
 
     platforms = stdenv.lib.platforms.unix;
@@ -96,4 +96,4 @@ stdenv.mkDerivation {
       ./b2 -j$NIX_BUILD_CORES -sEXPAT_INCLUDE=${expat.crossDrv}/include -sEXPAT_LIBPATH=${expat.crossDrv}/lib --layout=${layout} --user-config=user-config.jam toolset=gcc-cross variant=${variant} threading=${threading} link=${link} ${cflags} --without-python install
     '';
   };
-}
+}; in res // { lib = res; }

@@ -2,8 +2,8 @@
 , libvpx, check, libconfig, pkgconfig }:
 
 let
-  version = "e1158be5a6";
-  date = "20140728";
+  version = "900d72f951";
+  date = "20140921";
 in
 stdenv.mkDerivation rec {
   name = "tox-core-${date}-${version}";
@@ -11,7 +11,7 @@ stdenv.mkDerivation rec {
   src = fetchurl {
     url = "https://github.com/irungentoo/toxcore/tarball/${version}";
     name = "${name}.tar.gz";
-    sha256 = "1rsh1pbwvngsx5slmd6608b1zqs3jvq70bjr9zyziap9vxka3z1v";
+    sha256 = "1fwgflizb21mp4jwkfac7mgmahlly1f3ldbma6h8h6a2qf3pkn2r";
   };
 
   NIX_LDFLAGS = "-lgcc_s";
@@ -36,11 +36,16 @@ stdenv.mkDerivation rec {
   ];
 
   buildInputs = [
-    autoconf libtool automake libsodium ncurses libopus
-    libvpx check libconfig pkgconfig
+    autoconf libtool automake libsodium ncurses
+    check libconfig pkgconfig
+  ] ++ stdenv.lib.optionals (!stdenv.isArm) [
+    libopus
   ];
 
-  doCheck = true;
+  propagatedBuildInputs = stdenv.lib.optionals (!stdenv.isArm) [ libvpx ];
+
+  # Some tests fail in the Sheevaplug due to timeout
+  doCheck = !stdenv.isArm;
 
   meta = {
     description = "P2P FOSS instant messaging application aimed to replace Skype with crypto";

@@ -8,8 +8,8 @@
 
 cabal.mkDerivation (self: {
   pname = "free-game";
-  version = "1.1.78";
-  sha256 = "11f3ib4nx0madbx58gscaqwc1k5mxw70klrq7z7lac9w61phkws6";
+  version = "1.1.79";
+  sha256 = "0dlkkcbi7442cbl3ibzy234alaixh34hkc20wr7p75z47w1r5fbx";
   buildDepends = [
     boundingboxes colors controlBool filepath free freetype2 GLFWB
     hashable JuicyPixels JuicyPixelsUtil lens linear mtl OpenGL
@@ -21,5 +21,6 @@ cabal.mkDerivation (self: {
     description = "Create games for free";
     license = self.stdenv.lib.licenses.bsd3;
     platforms = self.ghc.meta.platforms;
+    maintainers = with self.stdenv.lib.maintainers; [ fuuzetsu ];
   };
 })
