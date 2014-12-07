@@ -34,6 +34,8 @@ let
       doublePatchelf = pkgs.stdenv.isArm;
     }
     ''
+      set +o pipefail
+
       mkdir -p $out/bin $out/lib
       ln -s $out/bin $out/sbin
 
@@ -50,7 +52,7 @@ let
       cp -pvd ${pkgs.busybox}/bin/* ${pkgs.busybox}/sbin/* $out/bin/
 
       # Copy some utillinux stuff.
-      cp -vf ${pkgs.utillinux}/sbin/blkid $out/bin
+      cp -vf --remove-destination ${pkgs.utillinux}/sbin/blkid $out/bin
       cp -pdv ${pkgs.utillinux}/lib/libblkid*.so.* $out/lib
       cp -pdv ${pkgs.utillinux}/lib/libuuid*.so.* $out/lib
 
@@ -127,7 +129,7 @@ let
       cp -v ${udev}/lib/udev/rules.d/60-persistent-storage.rules $out/
       cp -v ${udev}/lib/udev/rules.d/80-drivers.rules $out/
       cp -v ${pkgs.lvm2}/lib/udev/rules.d/*.rules $out/
-      cp -v ${pkgs.mdadm}/lib/udev/rules.d/*.rules $out/
+      ${config.boot.initrd.extraUdevRulesCommands}
 
       for i in $out/*.rules; do
           substituteInPlace $i \
@@ -137,7 +139,8 @@ let
             --replace ${pkgs.utillinux}/sbin/blkid ${extraUtils}/bin/blkid \
             --replace /sbin/blkid ${extraUtils}/bin/blkid \
             --replace ${pkgs.lvm2}/sbin ${extraUtils}/bin \
-            --replace /sbin/mdadm ${extraUtils}/bin/mdadm
+            --replace /sbin/mdadm ${extraUtils}/bin/mdadm \
+            --replace /bin/sh ${extraUtils}/bin/sh
       done
 
       # Work around a bug in QEMU, which doesn't implement the "READ
@@ -181,9 +184,21 @@ let
     inherit (config.boot.initrd) checkJournalingFS
       preLVMCommands postDeviceCommands postMountCommands kernelModules;
 
+    resumeDevices = map (sd: if sd ? device then sd.device else "/dev/disk/by-label/${sd.label}")
+                    (filter (sd: sd ? label || hasPrefix "/dev/" sd.device) config.swapDevices);
+
     fsInfo =
       let f = fs: [ fs.mountPoint (if fs.device != null then fs.device else "/dev/disk/by-label/${fs.label}") fs.fsType fs.options ];
       in pkgs.writeText "initrd-fsinfo" (concatStringsSep "\n" (concatMap f fileSystems));
+
+    setHostId = optionalString (config.networking.hostId != null) ''
+      hi="${config.networking.hostId}"
+      ${if pkgs.stdenv.isBigEndian then ''
+        echo -ne "\x''${hi:0:2}\x''${hi:2:2}\x''${hi:4:2}\x''${hi:6:2}" > /etc/hostid
+      '' else ''
+        echo -ne "\x''${hi:6:2}\x''${hi:4:2}\x''${hi:2:2}\x''${hi:0:2}" > /etc/hostid
+      ''}
+    '';
   };
 
 
@@ -199,6 +214,18 @@ let
         { object = pkgs.writeText "mdadm.conf" config.boot.initrd.mdadmConf;
           symlink = "/etc/mdadm.conf";
         }
+        { object = pkgs.stdenv.mkDerivation {
+            name = "initrd-kmod-blacklist-ubuntu";
+            builder = pkgs.writeText "builder.sh" ''
+              source $stdenv/setup
+              target=$out
+
+              ${pkgs.perl}/bin/perl -0pe 's/## file: iwlwifi.conf(.+?)##/##/s;' $src > $out
+            '';
+            src = "${pkgs.kmod-blacklist-ubuntu}/modprobe.conf";
+          };
+          symlink = "/etc/modprobe.d/ubuntu.conf";
+        }
       ];
   };
 
@@ -208,13 +235,14 @@ in
   options = {
 
     boot.resumeDevice = mkOption {
-      type = types.nullOr types.str;
-      default = null;
-      example = "8:2";
+      type = types.str;
+      default = "";
+      example = "/dev/sda3";
       description = ''
-        Device for manual resume attempt during boot, specified using
-        the device's major and minor number as
-        <literal><replaceable>major</replaceable>:<replaceable>minor</replaceable></literal>.
+        Device for manual resume attempt during boot. This should be used primarily
+        if you want to resume from file. Specify here the device where the file
+        resides. You should also use <varname>boot.kernelParams</varname> to specify
+        <literal><replaceable>resume_offset</replaceable></literal>.
       '';
     };
 
@@ -284,6 +312,17 @@ in
       '';
     };
 
+    boot.initrd.extraUdevRulesCommands = mkOption {
+      internal = true;
+      default = "";
+      type = types.lines;
+      description = ''
+        Shell commands to be executed in the builder of the
+        udev-rules derivation.  This can be used to add
+        additional udev rules in the initial ramdisk.
+      '';
+    };
+
     boot.initrd.compressor = mkOption {
       internal = true;
       default = "gzip -9";
@@ -329,9 +368,6 @@ in
       (isYes "TMPFS")
       (isYes "BLK_DEV_INITRD")
     ];
-
-    # Prevent systemd from waiting for the /dev/root symlink.
-    systemd.units."dev-root.device".text = "";
 
     boot.initrd.supportedFilesystems = map (fs: fs.fsType) fileSystems;
 

@@ -1,7 +1,7 @@
 { stdenv, fetchurl, fetchgit, freetype, pkgconfig, freefont_ttf, ffmpeg, libass
 , lua, perl, libpthreadstubs
 , lua5_sockets
-, python3, docutils, which
+, python3, docutils, which, lib
 , x11Support ? true, libX11 ? null, libXext ? null, mesa ? null, libXxf86vm ? null
 , xineramaSupport ? true, libXinerama ? null
 , xvSupport ? true, libXv ? null
@@ -20,8 +20,9 @@
 # For screenshots
 , libpngSupport ? true, libpng ? null
 # for Youtube support
-, quviSupport? false, libquvi ? null
-, cacaSupport? false, libcaca ? null
+, youtubeSupport ? false, youtubeDL ? null
+, cacaSupport ? false, libcaca ? null
+, vaapiSupport ? false, libva ? null
 }:
 
 assert x11Support -> (libX11 != null && libXext != null && mesa != null && libXxf86vm != null);
@@ -40,7 +41,7 @@ assert jackaudioSupport -> jack2 != null;
 assert pulseSupport -> pulseaudio != null;
 assert bs2bSupport -> libbs2b != null;
 assert libpngSupport -> libpng != null;
-assert quviSupport -> libquvi != null;
+assert youtubeSupport -> youtubeDL != null;
 assert cacaSupport -> libcaca != null;
 
 # Purity problem: Waf needed to be is downloaded by bootstrap.py
@@ -49,23 +50,23 @@ assert cacaSupport -> libcaca != null;
 
 let
   waf = fetchurl {
-    url = https://waf.googlecode.com/files/waf-1.7.15;
-    sha256 = "e5ae7028f9b2d8ce1acb9fe1092e8010a90ba764d3ac065ea4e846743290b1d6";
+    url = http://ftp.waf.io/pub/release/waf-1.8.1;
+    sha256 = "ec658116ba0b96629d91fde0b32321849e866e0819f1e835c4c2c7f7ffe1a21d";
   };
 
 in
 
 stdenv.mkDerivation rec {
   name = "mpv-${version}";
-  version = "0.4.1";
+  version = "0.7.0";
 
   src = fetchurl {
     url = "https://github.com/mpv-player/mpv/archive/v${version}.tar.gz";
-    sha256 = "0wqjyzw3kk854zj263k7jyykzfaz1g27z50aqrd26hylg8k135cn";
+    sha256 = "0rz8dp44yag442gamaa2vdmf69h25gqh2bgybx89prkfh8n4hy8x";
   };
 
   buildInputs = with stdenv.lib;
-    [ waf freetype pkgconfig ffmpeg libass docutils which libpthreadstubs lua5_sockets ]
+    [ python3 lua perl freetype pkgconfig ffmpeg libass docutils which libpthreadstubs lua5_sockets ]
     ++ optionals x11Support [ libX11 libXext mesa libXxf86vm ]
     ++ optional alsaSupport alsaLib
     ++ optional xvSupport libXv
@@ -81,13 +82,11 @@ stdenv.mkDerivation rec {
     ++ optional speexSupport speex
     ++ optional bs2bSupport libbs2b
     ++ optional libpngSupport libpng
-    ++ optional quviSupport libquvi
+    ++ optional youtubeSupport youtubeDL
     ++ optional sdl2Support SDL2
     ++ optional cacaSupport libcaca
+    ++ optional vaapiSupport libva
     ;
-
-  nativeBuildInputs = [ python3 lua perl ];
-
 
 # There are almost no need of "configure flags", but some libraries
 # weren't detected; see the TODO comments below
@@ -97,7 +96,7 @@ stdenv.mkDerivation rec {
   enableParallelBuilding = true;
 
   configurePhase = ''
-    python3 ${waf} configure --prefix=$out
+    python3 ${waf} configure --prefix=$out ${lib.optionalString vaapiSupport "--enable-vaapi"}
     patchShebangs TOOLS
   '';
 
@@ -112,21 +111,20 @@ stdenv.mkDerivation rec {
     ln -s ${freefont_ttf}/share/fonts/truetype/FreeSans.ttf $out/share/mpv/subfont.ttf
     '';
 
-  meta = {
+  meta = with stdenv.lib;{
     description = "A movie player that supports many video formats (MPlayer and mplayer2 fork)";
     longDescription = ''
-    mpv is a free and open-source general-purpose video player, based on the MPlayer and mplayer2 projects, with great improvements above both.
+      mpv is a free and open-source general-purpose video player,
+      based on the MPlayer and mplayer2 projects, with great
+      improvements above both.
     '';
-    homepage = "http://mpv.io";
-    license = stdenv.lib.licenses.gpl2Plus;
-    maintainers = [ stdenv.lib.maintainers.AndersonTorres ];
-    platforms = stdenv.lib.platforms.linux;
+    homepage = http://mpv.io;
+    license = licenses.gpl2Plus;
+    maintainers = [ maintainers.AndersonTorres ];
+    platforms = platforms.linux;
   };
 }
 
-# Heavily based on mplayer2 expression
-
 # TODO: Wayland support
-# TODO: investigate libquvi support
 # TODO: investigate caca support
 # TODO: investigate lua5_sockets bug

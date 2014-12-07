@@ -15,8 +15,8 @@ stdenv.mkDerivation {
   buildInputs = [wxGTK30 boost lua zlib bzip2 xylib readline gnuplot ];
 
   meta = {
-    description = "Fityk -- curve fitting and peak fitting software";
-    license = "GPL2";
+    description = "Curve fitting and peak fitting software";
+    license = stdenv.lib.licenses.gpl2;
     homepage = http://fityk.nieto.pl/;
     platforms = stdenv.lib.platforms.linux;
   };

@@ -1,14 +1,13 @@
 { stdenv, fetchurl, ... } @ args:
 
 import ./generic.nix (args // rec {
-  # Reason to add:  RTL8192EE
-  version = "3.16-rc3";
-  modDirVersion = "3.16.0-rc3";
-  extraMeta.branch = "3.16";
+  version = "3.18-rc7";
+  modDirVersion = "3.18.0-rc7";
+  extraMeta.branch = "3.18";
 
   src = fetchurl {
     url = "mirror://kernel/linux/kernel/v3.x/testing/linux-${version}.tar.xz";
-    sha256 = "17jgv1hnx2im68f8721x11yfg8mpas7lsxg0j00qxv2fc6km2glm";
+    sha256 = "1zq7jd33jq4ibvjdsj8cm4zlgjag7j8r7w7ajmzivr7npdb9fvvk";
   };
 
   features.iwlwifi = true;

@@ -9,9 +9,10 @@
 , gnomeKeyringSupport ? false
 , proprietaryCodecs ? true
 , enablePepperFlash ? false
-, enablePepperPDF ? false
+, enableWideVine ? false
 , cupsSupport ? false
 , pulseSupport ? false
+, hiDPISupport ? false
 }:
 
 let
@@ -27,14 +28,14 @@ let
     mkChromiumDerivation = callPackage ./common.nix {
       inherit enableSELinux enableNaCl useOpenSSL gnomeSupport
               gnomeKeyringSupport proprietaryCodecs cupsSupport
-              pulseSupport;
+              pulseSupport hiDPISupport;
     };
 
     browser = callPackage ./browser.nix { };
     sandbox = callPackage ./sandbox.nix { };
 
     plugins = callPackage ./plugins.nix {
-      inherit enablePepperFlash enablePepperPDF;
+      inherit enablePepperFlash enableWideVine;
     };
   };
 
@@ -54,26 +55,35 @@ let
       "x-scheme-handler/ftp"
       "x-scheme-handler/mailto"
       "x-scheme-handler/webcal"
+      "x-scheme-handler/about"
+      "x-scheme-handler/unknown"
     ];
     categories = "Network;WebBrowser";
   };
 
+  suffix = if channel != "stable" then "-" + channel else "";
+
 in stdenv.mkDerivation {
-  name = "chromium-${channel}-${chromium.browser.version}";
+  name = "chromium${suffix}-${chromium.browser.version}";
 
   buildInputs = [ makeWrapper ];
 
   buildCommand = let
     browserBinary = "${chromium.browser}/libexec/chromium/chromium";
     sandboxBinary = "${chromium.sandbox}/bin/chromium-sandbox";
-  in ''
+    mkEnvVar = key: val: "--set '${key}' '${val}'";
+    envVars = chromium.plugins.settings.envVars or {};
+    flags = chromium.plugins.settings.flags or [];
+  in with stdenv.lib; ''
     mkdir -p "$out/bin" "$out/share/applications"
 
     ln -s "${chromium.browser}/share" "$out/share"
     makeWrapper "${browserBinary}" "$out/bin/chromium" \
       --set CHROMIUM_SANDBOX_BINARY_PATH "${sandboxBinary}" \
-      --add-flags "${chromium.plugins.flagsEnabled}"
+      ${concatStrings (mapAttrsToList mkEnvVar envVars)} \
+      --add-flags "${concatStringsSep " " flags}"
 
+    ln -s "$out/bin/chromium" "$out/bin/chromium-browser"
     ln -s "${chromium.browser}/share/icons" "$out/share/icons"
     cp -v "${desktopItem}/share/applications/"* "$out/share/applications"
   '';

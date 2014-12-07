@@ -37,21 +37,22 @@ in {
 
     services.xserver.desktopManager.gnome3.sessionPath = mkOption {
       default = [];
-      example = "[ pkgs.gnome3.gpaste ]";
+      example = literalExample "[ pkgs.gnome3.gpaste ]";
       description = "Additional list of packages to be added to the session search path.
                      Useful for gnome shell extensions or gsettings-conditionated autostart.";
       apply = list: list ++ [ gnome3.gnome_shell ]; 
     };
 
     environment.gnome3.packageSet = mkOption {
-      default = pkgs.gnome3;
+      default = null;
       example = literalExample "pkgs.gnome3_12";
-      description = "Which Gnome 3 package set to use.";
+      description = "Which GNOME 3 package set to use.";
+      apply = p: if p == null then pkgs.gnome3 else p;
     };
     
     environment.gnome3.excludePackages = mkOption {
       default = [];
-      example = "[ pkgs.gnome3.totem ]";
+      example = literalExample "[ pkgs.gnome3.totem ]";
       type = types.listOf types.package;
       description = "Which packages gnome should exclude from the default environment";
     };
@@ -77,11 +78,11 @@ in {
     services.gnome3.tracker.enable = mkDefault true;
     hardware.pulseaudio.enable = mkDefault true;
     services.telepathy.enable = mkDefault true;
-    networking.networkmanager.enable = true;
+    networking.networkmanager.enable = mkDefault true;
     services.upower.enable = config.powerManagement.enable;
     services.upower.package = gnome3.upower;
 
-    fonts.fonts = [ pkgs.dejavu_fonts ];
+    fonts.fonts = [ pkgs.dejavu_fonts pkgs.cantarell_fonts ];
 
     services.xserver.desktopManager.session = singleton
       { name = "gnome3";

@@ -10,6 +10,8 @@ stdenv.mkDerivation rec {
 
   buildInputs = [ gmp ];
 
+  CFLAGS = "-I${gmp}/include";
+
   configureFlags =
     /* Work around a FreeBSD bug that otherwise leads to segfaults in the test suite:
           http://hydra.bordeaux.inria.fr/build/34862
@@ -25,7 +27,7 @@ stdenv.mkDerivation rec {
 
   meta = {
     homepage = http://www.mpfr.org/;
-    description = "GNU MPFR, a library for multiple-precision floating-point arithmetic";
+    description = "Library for multiple-precision floating-point arithmetic";
 
     longDescription = ''
       The GNU MPFR library is a C library for multiple-precision

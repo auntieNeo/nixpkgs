@@ -17,11 +17,13 @@ let
 
   knownHosts = map (h: getAttr h cfg.knownHosts) (attrNames cfg.knownHosts);
 
-  knownHostsFile = pkgs.writeText "ssh_known_hosts" (
-    flip concatMapStrings knownHosts (h: ''
-      ${concatStringsSep "," h.hostNames} ${if h.publicKey != null then h.publicKey else readFile h.publicKeyFile}
-    '')
-  );
+  knownHostsFile = pkgs.runCommand "ssh_known_hosts" {} ''
+    touch "$out"
+    ${flip concatMapStrings knownHosts (h: ''
+      pubkeyfile=${builtins.toFile "host.pub" (if h.publicKey == null then readFile h.publicKeyFile else h.publicKey)}
+      ${pkgs.gnused}/bin/sed 's/^/${concatStringsSep "," h.hostNames} /' $pubkeyfile >> "$out"
+    '')}
+  '';
 
   userOptions = {
 
@@ -144,6 +146,36 @@ in
         '';
       };
 
+      listenAddresses = mkOption {
+        type = types.listOf types.optionSet;
+        default = [];
+        example = [ { addr = "192.168.3.1"; port = 22; } { addr = "0.0.0.0"; port = 64022; } ];
+        description = ''
+          List of addresses and ports to listen on (ListenAddress directive
+          in config). If port is not specified for address sshd will listen
+          on all ports specified by <literal>ports</literal> option.
+          NOTE: this will override default listening on all local addresses and port 22.
+          NOTE: setting this option won't automatically enable given ports
+          in firewall configuration.
+        '';
+        options = {
+          addr = mkOption {
+            type = types.nullOr types.str;
+            default = null;
+            description = ''
+              Host, IPv4 or IPv6 address to listen to.
+            '';
+          };
+          port = mkOption {
+            type = types.nullOr types.int;
+            default = null;
+            description = ''
+              Port to listen to.
+            '';
+          };
+        };
+      };
+
       passwordAuthentication = mkOption {
         type = types.bool;
         default = true;
@@ -224,7 +256,10 @@ in
             description = ''
               The public key data for the host. You can fetch a public key
               from a running SSH server with the <command>ssh-keyscan</command>
-              command.
+              command. The public key should not include any host names, only
+              the key type and the key itself. It is allowed to add several
+              lines here, each line will be treated as type/key pair and the
+              host names will be prepended to each line.
             '';
           };
           publicKeyFile = mkOption {
@@ -234,7 +269,9 @@ in
               The path to the public key file for the host. The public
               key file is read at build time and saved in the Nix store.
               You can fetch a public key file from a running SSH server
-              with the <command>ssh-keyscan</command> command.
+              with the <command>ssh-keyscan</command> command. The content
+              of the file should follow the same format as described for
+              the <literal>publicKey</literal> option.
             '';
           };
         };
@@ -261,7 +298,7 @@ in
       };
 
     environment.etc = authKeysFiles ++ [
-      { source = "${pkgs.openssh}/etc/ssh/moduli";
+      { source = "${cfgc.package}/etc/ssh/moduli";
         target = "ssh/moduli";
       }
       { source = knownHostsFile;
@@ -278,7 +315,7 @@ in
 
             stopIfChanged = false;
 
-            path = [ pkgs.openssh pkgs.gawk ];
+            path = [ cfgc.package pkgs.gawk ];
 
             environment.LD_LIBRARY_PATH = nssModulesPath;
 
@@ -295,7 +332,7 @@ in
 
             serviceConfig =
               { ExecStart =
-                  "${pkgs.openssh}/sbin/sshd " + (optionalString cfg.startWhenNeeded "-i ") +
+                  "${cfgc.package}/sbin/sshd " + (optionalString cfg.startWhenNeeded "-i ") +
                   "-f ${pkgs.writeText "sshd_config" cfg.extraConfig}";
                 KillMode = "process";
               } // (if cfg.startWhenNeeded then {
@@ -349,6 +386,10 @@ in
           Port ${toString port}
         '') cfg.ports}
 
+        ${concatMapStrings ({ port, addr }: ''
+          ListenAddress ${addr}${if port != null then ":" + toString port else ""}
+        '') cfg.listenAddresses}
+
         ${optionalString cfgc.setXAuthLocation ''
             XAuthLocation ${pkgs.xorg.xauth}/bin/xauth
         ''}
@@ -360,7 +401,7 @@ in
         ''}
 
         ${optionalString cfg.allowSFTP ''
-          Subsystem sftp ${pkgs.openssh}/libexec/sftp-server
+          Subsystem sftp ${cfgc.package}/libexec/sftp-server
         ''}
 
         PermitRootLogin ${cfg.permitRootLogin}
@@ -383,6 +424,10 @@ in
         assertion = (data.publicKey == null && data.publicKeyFile != null) ||
                     (data.publicKey != null && data.publicKeyFile == null);
         message = "knownHost ${name} must contain either a publicKey or publicKeyFile";
+      })
+      ++ flip map cfg.listenAddresses ({ addr, port }: {
+        assertion = addr != null;
+        message = "addr must be specified in each listenAddresses entry";
       });
 
   };

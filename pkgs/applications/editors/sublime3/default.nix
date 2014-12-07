@@ -1,9 +1,9 @@
-{ fetchurl, stdenv, glib, xlibs, cairo, gtk, pango, makeWrapper}:
+{ fetchurl, stdenv, glib, xlibs, cairo, gtk, pango, makeWrapper, openssl, bzip2 }:
 
 assert stdenv.system == "i686-linux" || stdenv.system == "x86_64-linux";
 
 let
-  build = "3059";
+  build = "3065";
   libPath = stdenv.lib.makeLibraryPath [glib xlibs.libX11 gtk cairo pango];
 in let
   # package with just the binaries
@@ -13,15 +13,15 @@ in let
     src =
       if stdenv.system == "i686-linux" then
         fetchurl {
-          name = "sublimetext-3.0.59.tar.bz2";
+          name = "sublimetext-3.0.65.tar.bz2";
           url = "http://c758482.r82.cf2.rackcdn.com/sublime_text_3_build_${build}_x32.tar.bz2";
-          sha256 = "5ee7b42b5db057108e97b86fd408124fc3f7b56662b2851f59d91f8f0c288088";
+          sha256 = "e25f84fe0d0c02ce71274d334fd42ce6313adcd4ec1d588b165d25f5e93ad78d";
         }
       else
         fetchurl {
-          name = "sublimetext-3.0.59.tar.bz2";
+          name = "sublimetext-3.0.65.tar.bz2";
           url = "http://c758482.r82.cf2.rackcdn.com/sublime_text_3_build_${build}_x64.tar.bz2";
-          sha256 = "da3039687664d33a734cea0151b2291ece9c7f35e5b73df5b2b5eac28a20b972";
+          sha256 = "fe548e6d86d72cd7e90eee9d5396b590ae6e8f8b0dfc661d86c814214e60faea";
         };
 
     dontStrip = true;
@@ -41,7 +41,7 @@ in let
       mkdir -p $out
       cp -prvd * $out/
       # Without this, plugin_host crashes, even though it has the rpath
-      wrapProgram $out/plugin_host --prefix LD_PRELOAD : ${stdenv.gcc.gcc}/lib${stdenv.lib.optionalString stdenv.is64bit "64"}/libgcc_s.so.1
+      wrapProgram $out/plugin_host --prefix LD_PRELOAD : ${stdenv.gcc.gcc}/lib${stdenv.lib.optionalString stdenv.is64bit "64"}/libgcc_s.so.1:${openssl}/lib/libssl.so:${bzip2}/lib/libbz2.so
     '';
   };
 in stdenv.mkDerivation {
@@ -56,7 +56,7 @@ in stdenv.mkDerivation {
 
   meta = {
     description = "Sophisticated text editor for code, markup and prose";
-    maintainers = stdenv.lib.maintainers.wmertens;
+    maintainers = [ stdenv.lib.maintainers.wmertens ];
     license = stdenv.lib.licenses.unfree;
   };
 }

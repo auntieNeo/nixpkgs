@@ -1,31 +1,30 @@
-{ stdenv, fetchurl, autoconf, libtool, automake, libsodium, ncurses
+{ stdenv, fetchFromGitHub, autoconf, libtool, automake, libsodium, ncurses
 , libtoxcore, openal, libvpx, freealut, libconfig, pkgconfig }:
 
-let
-  version = "7566aa9d26";
-  date = "20140728";
-in
 stdenv.mkDerivation rec {
-  name = "toxic-${date}-${version}";
+  name = "toxic-dev-20141130";
 
-  src = fetchurl {
-    url = "https://github.com/Tox/toxic/tarball/${version}";
-    name = "${name}.tar.gz";
-    sha256 = "13vns0qc0hxhab6rpz0irnzgv42mp3v1nrbwm90iymhf4xkc9nwa";
+  src = fetchFromGitHub {
+    owner = "Tox";
+    repo = "toxic";
+    rev = "4acfe84171";
+    sha256 = "1yqglh9fm75zph4fzf3z4gwmamngypwpvb7shpqgakdg8ybq0a8s";
   };
 
-  makeFlags = [ "-Cbuild" "VERSION=${version}" ];
+  makeFlags = [ "-Cbuild" "PREFIX=$(out)" ];
   installFlags = [ "PREFIX=$(out)" ];
 
   buildInputs = [
-    autoconf libtool automake libtoxcore libsodium ncurses openal libvpx
-    freealut libconfig pkgconfig
+    autoconf libtool automake libtoxcore libsodium ncurses
+    libconfig pkgconfig
+  ] ++ stdenv.lib.optionals (!stdenv.isArm) [
+    openal libvpx freealut
   ];
 
-  meta = {
+  meta = with stdenv.lib; {
     description = "Reference CLI for Tox";
-    license = stdenv.lib.licenses.gpl3Plus;
-    maintainers = with stdenv.lib.maintainers; [ viric ];
-    platforms = stdenv.lib.platforms.all;
+    license = licenses.gpl3Plus;
+    maintainers = with maintainers; [ viric jgeerds ];
+    platforms = platforms.all;
   };
 }

@@ -7,8 +7,8 @@
 
 cabal.mkDerivation (self: {
   pname = "diagrams-svg";
-  version = "1.1";
-  sha256 = "0b34rh35pay4x8dg0i06xvr3d865hbxzj2x77jly9l1j7sa1qaj1";
+  version = "1.1.0.2";
+  sha256 = "0dzws9c3swgnrx70a64614m9pc8rszfajgh674n7x56fbbp3ra1n";
   buildDepends = [
     base64Bytestring blazeMarkup blazeSvg colour diagramsCore
     diagramsLib filepath hashable JuicyPixels lens monoidExtras mtl
@@ -20,5 +20,6 @@ cabal.mkDerivation (self: {
     description = "SVG backend for diagrams drawing EDSL";
     license = self.stdenv.lib.licenses.bsd3;
     platforms = self.ghc.meta.platforms;
+    maintainers = with self.stdenv.lib.maintainers; [ bergey ];
   };
 })

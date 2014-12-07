@@ -7,14 +7,15 @@
 
 cabal.mkDerivation (self: {
   pname = "hcltest";
-  version = "0.3.3";
-  sha256 = "191fpvcr5hg902akcvq9wcsy801drqwrl7xqk0bqy003ffrv4228";
+  version = "0.3.6";
+  sha256 = "145l3kfxi1slngcmh4dnn09hhpr5v6s5nppk0i5a5jzxpp2yx6sd";
   buildDepends = [
     dlist either filepath free lens mmorph monadControl mtl
     optparseApplicative randomShuffle split stm tagged tasty temporary
     text transformers transformersBase
   ];
   testDepends = [ doctest filepath ];
+  jailbreak = true;
   meta = {
     homepage = "http://github.com/bennofs/hcltest/";
     description = "A testing library for command line applications";

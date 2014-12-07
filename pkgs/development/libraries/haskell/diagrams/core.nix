@@ -6,8 +6,8 @@
 
 cabal.mkDerivation (self: {
   pname = "diagrams-core";
-  version = "1.2.0.1";
-  sha256 = "01rzd2zdg0pv7b299z6s6i6l6xggiszb2qs00vh5dbss295n1sps";
+  version = "1.2.0.3";
+  sha256 = "1pmdz75v2xl8y0clqifs017gq40syxqpfa2h2mc50pip3484a7m5";
   buildDepends = [
     dualTree lens MemoTrie monoidExtras newtype semigroups vectorSpace
     vectorSpacePoints
@@ -18,5 +18,6 @@ cabal.mkDerivation (self: {
     description = "Core libraries for diagrams EDSL";
     license = self.stdenv.lib.licenses.bsd3;
     platforms = self.ghc.meta.platforms;
+    maintainers = with self.stdenv.lib.maintainers; [ bergey ];
   };
 })

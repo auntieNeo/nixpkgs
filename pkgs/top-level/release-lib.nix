@@ -1,9 +1,9 @@
-{ supportedSystems }:
+{ supportedSystems, packageSet ? (import ./all-packages.nix) }:
 
 rec {
 
   # Ensure that we don't build packages marked as unfree.
-  allPackages = args: import ./all-packages.nix (args // {
+  allPackages = args: packageSet (args // {
     config.allowUnfree = false;
   });
 
@@ -123,6 +123,8 @@ rec {
       packagesWithMetaPlatform attrSet
     else if attrSet.recurseForRelease or false then
       packagesWithMetaPlatform attrSet
+    else if attrSet.meta.broken or false then
+      []
     else
       attrSet.meta.hydraPlatforms or (attrSet.meta.platforms or []);
 

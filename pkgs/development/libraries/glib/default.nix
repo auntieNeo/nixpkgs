@@ -7,6 +7,8 @@
 
 with stdenv.lib;
 
+assert stdenv.gcc.gcc != null;
+
 # TODO:
 # * Add gio-module-fam
 #     Problem: cyclic dependency on gamin
@@ -37,8 +39,8 @@ let
     ln -sr -t "$out/include/" "$out"/lib/*/include/* 2>/dev/null || true
   '';
 
-  ver_maj = "2.40";
-  ver_min = "0";
+  ver_maj = "2.42";
+  ver_min = "1";
 in
 
 stdenv.mkDerivation rec {
@@ -46,10 +48,10 @@ stdenv.mkDerivation rec {
 
   src = fetchurl {
     url = "mirror://gnome/sources/glib/${ver_maj}/${name}.tar.xz";
-    sha256 = "1d98mbqjmc34s8095lkw1j1bwvnnkw9581yfvjaikjvfjsaz29qd";
+    sha256 = "16pqvikrps1fvwwqvk0qi4a13mfg7gw6w5qfhk7bhi8f51jhhgwg";
   };
 
-  patches = optional stdenv.isDarwin ./darwin-compilation.patch;
+  patches = optional stdenv.isDarwin ./darwin-compilation.patch ++ optional doCheck ./skip-timer-test.patch;
 
   setupHook = ./setup-hook.sh;
 
@@ -75,6 +77,7 @@ stdenv.mkDerivation rec {
     '';
 
   enableParallelBuilding = true;
+  DETERMINISTIC_BUILD = 1;
 
   inherit doCheck;
   preCheck = optionalString doCheck
@@ -105,7 +108,7 @@ stdenv.mkDerivation rec {
   };
 
   meta = with stdenv.lib; {
-    description = "GLib, a C library of programming buildings blocks";
+    description = "C library of programming buildings blocks";
     homepage    = http://www.gtk.org/;
     license     = licenses.lgpl2Plus;
     maintainers = with maintainers; [ lovek323 raskin urkud ];

@@ -185,6 +185,11 @@
   brief = false;
 }
 {
+  name = "source-sans-pro-2.010R-ro-1.065R-it.tar.gz";
+  md5 = "edc4d741888bc0d38e32dbaa17149596";
+  brief = false;
+}
+{
   name = "libfreehand-0.1.0.tar.bz2";
   md5 = "5f029fef73e42a2c2ae4524a7513f97d";
   brief = true;
@@ -326,8 +331,8 @@
 }
 {
   name = "libgltf-0.0.0.tar.bz2";
-  md5 = "3d9ea1f2828c46f8ba94b88a87b3326d";
-  brief = false;
+  md5 = "ca5436e916bfe70694adfe2607782786";
+  brief = true;
   subDir = "libgltf/";
 }
 {
@@ -519,5 +524,11 @@
   name = "zlib-1.2.8.tar.gz";
   md5 = "44d667c142d7cda120332623eab69f40";
   brief = true;
+}
+{
+  name = "libgltf-0.0.2.tar.bz2";
+  md5 = "d63a9f47ab048f5009d90693d6aa6424";
+  brief = true;
+  subDir = "libgltf/";
 }
 ]

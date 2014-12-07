@@ -30,7 +30,7 @@ stdenv.mkDerivation rec {
   '';
 
   meta = {
-    description = "Twelf logic proof assistant";
+    description = "Logic proof assistant";
     longDescription = ''
       Twelf is a language used to specify, implement, and prove properties of
       deductive systems such as programming languages and logics. Large
@@ -39,7 +39,7 @@ stdenv.mkDerivation rec {
       Standard ML.
     '';
     homepage = http://twelf.org/wiki/Main_Page;
-    license = "MIT";
+    license = stdenv.lib.licenses.mit;
     maintainers = with stdenv.lib.maintainers; [ jwiegley ];
     platforms = stdenv.lib.platforms.unix;
   };

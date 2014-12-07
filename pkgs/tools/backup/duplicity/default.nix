@@ -1,14 +1,15 @@
-{ stdenv, fetchurl, python, librsync, ncftp, gnupg, boto, makeWrapper, lockfile }:
+{ stdenv, fetchurl, python, librsync, ncftp, gnupg, boto, makeWrapper
+, lockfile, setuptools }:
 
 let
-  version = "0.6.23";
+  version = "0.6.25";
 in
 stdenv.mkDerivation {
   name = "duplicity-${version}";
 
   src = fetchurl {
     url = "http://code.launchpad.net/duplicity/0.6-series/${version}/+download/duplicity-${version}.tar.gz";
-    sha256 = "0q0ckkmyq9z7xfbb1jajflmbzjwxpcjkkiab43rxrplm0ghz25vs";
+    sha256 = "098p5j7clbaya3yq7q05n6xv7h1qs8iffxwvlisyfpqwpi5g8i5c";
   };
 
   installPhase = ''
@@ -20,7 +21,7 @@ stdenv.mkDerivation {
       --prefix PYTHONPATH : "$(toPythonPath $out):$(toPythonPath ${boto}):$(toPythonPath ${lockfile})" \
   '';
 
-  buildInputs = [ python librsync makeWrapper ];
+  buildInputs = [ python librsync makeWrapper setuptools ];
 
   meta = {
     description = "Encrypted bandwidth-efficient backup using the rsync algorithm";

@@ -80,10 +80,11 @@ in
   };
 
   nokogiri = {
+    buildInputs = [ libxml2 ];
     buildFlags =
       [ "--with-xml2-dir=${libxml2} --with-xml2-include=${libxml2}/include/libxml2"
-        "--with-xslt-dir=${libxslt}"
-      ];
+        "--with-xslt-dir=${libxslt}  --use-system-libraries"
+      ] ++ libiconvOrEmpty;
   };
 
   pry = { gemFlags = "--no-ri --no-rdoc"; };
@@ -131,4 +132,6 @@ in
         zcat ${patch} | patch -p 1
       ''; # */
     };
+
+  bundler = { dontPatchShebangs=1; };
 }

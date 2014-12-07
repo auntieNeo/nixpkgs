@@ -1,9 +1,9 @@
 { stdenv, fetchurl, pkgconfig, perl, bison, flex, python, gobjectIntrospection
-, glib 
+, glib
 }:
 
 stdenv.mkDerivation rec {
-  name = "gstreamer-1.4.0";
+  name = "gstreamer-1.4.3";
 
   meta = {
     description = "Open source multimedia framework";
@@ -15,7 +15,7 @@ stdenv.mkDerivation rec {
 
   src = fetchurl {
     url = "${meta.homepage}/src/gstreamer/${name}.tar.xz";
-    sha256 = "15f68pn2b47x543ih7hj59czgzl4af14j15bgjq8ky145gf9zhr3";
+    sha256 = "11f155784d28b85a12b50d2fc8f91c6b75d9ca325cc76aaffba1a58d4c9549c9";
   };
 
   nativeBuildInputs = [

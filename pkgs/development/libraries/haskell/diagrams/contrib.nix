@@ -9,8 +9,8 @@
 
 cabal.mkDerivation (self: {
   pname = "diagrams-contrib";
-  version = "1.1.2";
-  sha256 = "1gljmzlhc6vck5lcsq9lhf2k4dik5pp62k85y2kkxgq0mxnmqf0g";
+  version = "1.1.2.3";
+  sha256 = "00bn9p2a6h26q7hfqqzwimfgr2avf7ilf61z3anz25raz8jqvfxc";
   buildDepends = [
     arithmoi circlePacking colour dataDefault dataDefaultClass
     diagramsCore diagramsLib forceLayout lens MonadRandom mtl parsec
@@ -26,5 +26,6 @@ cabal.mkDerivation (self: {
     description = "Collection of user contributions to diagrams EDSL";
     license = self.stdenv.lib.licenses.bsd3;
     platforms = self.ghc.meta.platforms;
+    maintainers = with self.stdenv.lib.maintainers; [ bergey ];
   };
 })

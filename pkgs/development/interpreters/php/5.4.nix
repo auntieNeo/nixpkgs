@@ -9,7 +9,7 @@ in
 
 composableDerivation.composableDerivation {} ( fixed : let inherit (fixed.fixed) version; in {
 
-  version = "5.4.31";
+  version = "5.4.35";
 
   name = "php-${version}";
 
@@ -74,6 +74,11 @@ composableDerivation.composableDerivation {} ( fixed : let inherit (fixed.fixed)
 
       postgresql = {
         configureFlags = ["--with-pgsql=${postgresql}"];
+        buildInputs = [ postgresql ];
+      };
+
+      pdo_pgsql = {
+        configureFlags = ["--with-pdo-pgsql=${postgresql}"];
         buildInputs = [ postgresql ];
       };
 
@@ -180,12 +185,6 @@ composableDerivation.composableDerivation {} ( fixed : let inherit (fixed.fixed)
          php is build within this derivation in order to add the xdebug lines to the php.ini.
          So both Apache and command line php both use xdebug without having to configure anything.
          Xdebug could be put in its own derivation.
-      * /
-        meta = {
-                description = "debugging support for PHP";
-                homepage = http://xdebug.org;
-                license = "based on the PHP license - as is";
-                };
       */
     };
 
@@ -203,6 +202,7 @@ composableDerivation.composableDerivation {} ( fixed : let inherit (fixed.fixed)
     gettextSupport = config.php.gettext or true;
     pcntlSupport = config.php.pcntl or true;
     postgresqlSupport = config.php.postgresql or true;
+    pdo_pgsqlSupport = config.php.pdo_pgsql or true;
     readlineSupport = config.php.readline or true;
     sqliteSupport = config.php.sqlite or true;
     soapSupport = config.php.soap or true;
@@ -243,13 +243,13 @@ composableDerivation.composableDerivation {} ( fixed : let inherit (fixed.fixed)
 
   src = fetchurl {
     url = "http://www.php.net/distributions/php-${version}.tar.bz2";
-    sha256 = "0kci0yir923fc7dv7j9qrc10pj05v82jnxjxjbgrj7gx64a4k3jy";
+    sha256 = "0d425zxka3m1l0ygsls4r56qy374rf6skl4ggim0k2y1y08fmm2p";
   };
 
   meta = {
-    description = "The PHP language runtime engine";
+    description = "An HTML-embedded scripting language";
     homepage = http://www.php.net/;
-    license = "PHP-3";
+    license = stdenv.lib.licenses.php301;
   };
 
   patches = [ ./fix-5.4.patch ];

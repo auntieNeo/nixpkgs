@@ -4,8 +4,8 @@
 
 cabal.mkDerivation (self: {
   pname = "force-layout";
-  version = "0.3.0.5";
-  sha256 = "01wk8zygw9d3r5dwbycyab82kfk8s05ynnajb6kfjv7i09s9sgcb";
+  version = "0.3.0.8";
+  sha256 = "00b831l94r3lx0b330ql3w551w0fwziayhsjydzbfqq335syaaxg";
   buildDepends = [
     dataDefaultClass lens vectorSpace vectorSpacePoints
   ];
@@ -14,5 +14,6 @@ cabal.mkDerivation (self: {
     description = "Simple force-directed layout";
     license = self.stdenv.lib.licenses.bsd3;
     platforms = self.ghc.meta.platforms;
+    maintainers = with self.stdenv.lib.maintainers; [ bergey ];
   };
 })

@@ -1,7 +1,7 @@
 # This module generates nixos-install, nixos-rebuild,
 # nixos-generate-config, etc.
 
-{ config, pkgs, modulesPath, lib, ... }:
+{ config, pkgs, modulesPath, ... }:
 
 let
 
@@ -38,6 +38,7 @@ let
   nixos-generate-config = makeProg {
     name = "nixos-generate-config";
     src = ./nixos-generate-config.pl;
+    path = [ pkgs.btrfsProgs ];
     perl = "${pkgs.perl}/bin/perl -I${pkgs.perlPackages.FileSlurp}/lib/perl5/site_perl";
   };
 

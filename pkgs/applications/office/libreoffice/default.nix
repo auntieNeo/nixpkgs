@@ -24,8 +24,8 @@ let
   langsSpaces = stdenv.lib.concatStringsSep " " langs;
   major = "4";
   minor = "3";
-  patch = "0";
-  tweak = "4";
+  patch = "3";
+  tweak = "2";
   subdir = "${major}.${minor}.${patch}";
   version = "${subdir}${if tweak == "" then "" else "."}${tweak}";
 
@@ -40,9 +40,9 @@ let
        sha256 = "10amvz7fzr1kcy3svfspkdykmspqgpjdmk44cyr406wi7v4lwnf9";
      };
 
-     configureFlags = "--with-boost=${boost}";
-
      buildInputs = [ boost mdds pkgconfig ];
+
+     configureFlags = [ "--with-boost=${boost.dev}" ];
   };
 
   fetchThirdParty = {name, md5, brief, subDir ? ""}: fetchurl {
@@ -60,9 +60,10 @@ let
       (x: x.name == "${name}.tar.bz2")
       ("Error: update liborcus version inside LO expression")
       (import ./libreoffice-srcs.nix));
-    configureFlags = "--with-boost=${boost}";
 
     buildInputs = [ boost mdds pkgconfig zlib libixion ];
+
+    configureFlags = [ "--with-boost=${boost.dev}" ];
   };
 
   fetchSrc = {name, sha256}: fetchurl {
@@ -79,14 +80,14 @@ let
 
     translations = fetchSrc {
       name = "translations";
-      sha256 = "1l445284mih0c7d6v3ps1piy5pbjvisyrjjvlrqizvwxqm7bxpr1";
+      sha256 = "0jpkkb71fbiid12r2dpvak304hlvx4ws1bk2yrb3narz15wzcvjr";
     };
 
     # TODO: dictionaries
 
     help = fetchSrc {
       name = "help";
-      sha256 = "0avsc11d4nmycsxvadr0xcd8z9506sjcc89hgmliqlmhmw48ax7y";
+      sha256 = "0vd4ndnqy7xjlxh9flfp84jy82bvaq80pxcsx6lsarxsb4cvw7sz";
     };
 
   };
@@ -96,7 +97,7 @@ stdenv.mkDerivation rec {
 
   src = fetchurl {
     url = "http://download.documentfoundation.org/libreoffice/src/${subdir}/libreoffice-${version}.tar.xz";
-    sha256 = "1r605nwjdq20qd96chqic1bjkw7y36wmpg2lzzvv5sz6gw12rzi8";
+    sha256 = "0abmrn8iwwsbvi9dxq1pnirclxvfb33ngg7lpsj0y5lf0jpgpbb0";
   };
 
   # Openoffice will open libcups dynamically, so we link it directly
@@ -113,9 +114,7 @@ stdenv.mkDerivation rec {
   '' + (stdenv.lib.concatMapStrings (f: "ln -sv ${f} $sourceRoot/src/${f.outputHash}-${f.name}\nln -sv ${f} $sourceRoot/src/${f.name}\n") srcs.third_party)
   + ''
     ln -sv ${srcs.help} $sourceRoot/src/${srcs.help.name}
-    tar xf $sourceRoot/src/${srcs.help.name} -C $sourceRoot/../
-    ln -sv ${srcs.translations} $sourceRoot/src/${srcs.translations.name}
-    tar xf $sourceRoot/src/${srcs.translations.name} -C $sourceRoot/../
+    ln -svf ${srcs.translations} $sourceRoot/src/${srcs.translations.name}
   '';
 
   patchPhase = ''
@@ -183,6 +182,8 @@ stdenv.mkDerivation rec {
   '';
 
   configureFlags = [
+    "--with-boost=${boost.dev}"
+    "--with-boost-libdir=${boost.lib}/lib"
     "--with-vendor=NixOS"
 
     # Without these, configure does not finish
@@ -198,7 +199,6 @@ stdenv.mkDerivation rec {
     "--with-system-headers"
     "--with-system-openssl"
     "--with-system-openldap"
-    "--with-boost-libdir=${boost}/lib"
     "--without-system-libwps"  # TODO
     "--without-doxygen"
 
@@ -252,7 +252,7 @@ stdenv.mkDerivation rec {
     ];
 
   meta = with stdenv.lib; {
-    description = "LibreOffice is a comprehensive, professional-quality productivity suite, a variant of openoffice.org";
+    description = "Comprehensive, professional-quality productivity suite, a variant of openoffice.org";
     homepage = http://libreoffice.org/;
     license = licenses.lgpl3;
     maintainers = [ maintainers.viric maintainers.raskin ];

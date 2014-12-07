@@ -1,4 +1,8 @@
-{stdenv, fetchurl, fetchgit, which, file, perl, curl, python27, makeWrapper}:
+{ stdenv, fetchurl, fetchgit, which, file, perl, curl, python27, makeWrapper
+, tzdata, git, valgrind
+}:
+
+assert stdenv.gcc.gcc != null;
 
 /* Rust's build process has a few quirks :
 
@@ -14,19 +18,19 @@
 
 */
 
-with ((import ./common.nix) {inherit stdenv; version = "0.12.0-pre-7a25cf3f3"; });
+with ((import ./common.nix) {inherit stdenv; version = "0.13.0-pre-1673-g3a325c6";});
 
 let snapshot = if stdenv.system == "i686-linux"
-      then "a5e1bb723020ac35173d49600e76b0935e257a6a"
+      then "c8342e762a1720be939ed7c6a39bdaa27892f66f"
       else if stdenv.system == "x86_64-linux"
-      then "1a2407df17442d93d1c34c916269a345658045d7"
+      then "7a7fe6f5ed47b9cc66261f880e166c7c8738b73e"
       else if stdenv.system == "i686-darwin"
-      then "6648fa88e41ad7c0991a085366e36d56005873ca"
+      then "63e8644512bd5665c14389a83d5af564c7c0b103"
       else if stdenv.system == "x86_64-darwin"
-      then "71b2d1dfd0abe1052908dc091e098ed22cf272c6"
+      then "7933ae0e974d1b897806138b7052cb2b4514585f"
       else abort "no-snapshot for platform ${stdenv.system}";
-    snapshotDate = "2014-07-17";
-    snapshotRev = "9fc8394";
+    snapshotDate = "2014-11-21";
+    snapshotRev = "c9f6d69";
     snapshotName = "rust-stage0-${snapshotDate}-${snapshotRev}-${platform}-${snapshot}.tar.bz2";
 
 in stdenv.mkDerivation {
@@ -36,8 +40,8 @@ in stdenv.mkDerivation {
 
   src = fetchgit {
     url = https://github.com/rust-lang/rust;
-    rev = "7a25cf3f30fa5fae2e868fa910ecc850f5e9ee65";
-    sha256 = "1hx8vd4gn5plbdvr0zvdvqyw9x9r2vbmh112h2f5d2xxsf9p7rf1";
+    rev = "3a325c666d2cb7e297bf3057ff2442f96a79428b";
+    sha256 = "0a0byglfaf0wfsnlm53vng1gqkkz4i29zphdwqg93v26mciqqc61";
   };
 
   # We need rust to build rust. If we don't provide it, configure will try to download it.
@@ -61,13 +65,26 @@ in stdenv.mkDerivation {
   configureFlags = [ "--enable-local-rust" "--local-rust-root=$snapshot" ];
 
   # The compiler requires cc, so we patch the source to tell it where to find it
-  patches = [ ./hardcode_paths.patch ./local_stage0.patch ];
+  patches = [ ./hardcode_paths.HEAD.patch ./local_stage0.HEAD.patch ]
+            ++ stdenv.lib.optional stdenv.needsPax ./grsec.HEAD.patch;
+
   postPatch = ''
-    substituteInPlace src/librustc/back/link.rs \
-      --subst-var-by "ccPath" "${stdenv.gcc}/bin/cc" \
+    substituteInPlace src/librustc_trans/back/link.rs \
+      --subst-var-by "ccPath" "${stdenv.gcc}/bin/cc"
+    substituteInPlace src/librustc_back/archive.rs \
       --subst-var-by "arPath" "${stdenv.gcc.binutils}/bin/ar"
   '';
 
-  buildInputs = [ which file perl curl python27 makeWrapper ];
-  enableParallelBuilding = true;
+  buildInputs = [ which file perl curl python27 makeWrapper git valgrind ];
+
+  enableParallelBuilding = false; # disabled due to rust-lang/rust#16305
+
+  preCheck = "export TZDIR=${tzdata}/share/zoneinfo";
+
+  doCheck = true;
+
+  postInstall = ''
+      # Install documentation
+      cp -r doc "$out/share/doc"
+  '';
 }

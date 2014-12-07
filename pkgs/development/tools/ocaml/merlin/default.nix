@@ -1,21 +1,28 @@
-{stdenv, fetchurl, ocaml, findlib, easy-format, biniou, yojson, menhir}:
+{stdenv, fetchurl, ocaml, findlib, yojson, menhir
+, withEmacsMode ? false, emacs}:
+
+assert stdenv.lib.versionAtLeast (stdenv.lib.getVersion ocaml) "4.00";
+
 stdenv.mkDerivation {
 
-  name = "merlin-1.6";
+  name = "merlin-2.0";
 
   src = fetchurl {
-    url = "https://github.com/the-lambda-church/merlin/archive/v1.6.tar.gz";
-    sha256 = "0wq75hgffaszazrhkl0nfjxgx8bvazi2sjannd8q64hvax8hxzcy";
+    url = https://github.com/the-lambda-church/merlin/archive/v2.0.tar.gz;
+    sha256 = "1khvmncj6gfk9p5wl07gp6ii9csc5s1bcv892lkfpfbnsspis7cp";
   };
 
-  buildInputs = [ ocaml findlib biniou yojson menhir easy-format ];
+  buildInputs = [ ocaml findlib yojson menhir ]
+    ++ stdenv.lib.optional withEmacsMode emacs;
 
+  preConfigure = "mkdir -p $out/bin";
   prefixKey = "--prefix ";
+  configureFlags = stdenv.lib.optional withEmacsMode "--enable-compiled-emacs-mode";
 
-  meta = {
-    description = "An editor-independant tool to ease the developpement of programs in OCaml";
+  meta = with stdenv.lib; {
+    description = "An editor-independent tool to ease the development of programs in OCaml";
     homepage = "http://the-lambda-church.github.io/merlin/";
-    license = stdenv.lib.licenses.mit;
+    license = licenses.mit;
+    maintainers = [ maintainers.vbgl ];
   };
 }
-
