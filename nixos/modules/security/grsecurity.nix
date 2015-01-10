@@ -38,7 +38,7 @@ in
         type = types.bool;
         default = false;
         description = ''
-          Enable the testing grsecurity patch, based on Linux 3.17.
+          Enable the testing grsecurity patch, based on Linux 3.18.
         '';
       };
 
@@ -226,8 +226,8 @@ in
       [ { assertion = cfg.stable || cfg.testing;
           message   = ''
             If grsecurity is enabled, you must select either the
-            stable patch (with kernel 3.2), or the testing patch (with
-            kernel 3.13) to continue.
+            stable patch (with kernel 3.14), or the testing patch (with
+            kernel 3.18) to continue.
           '';
         }
         { assertion = (cfg.stable -> !cfg.testing) || (cfg.testing -> !cfg.stable);

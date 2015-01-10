@@ -75,6 +75,7 @@ rec {
   hub = import ./hub {
     inherit (rubyLibs) rake;
     inherit stdenv fetchurl groff makeWrapper;
+    git = gitBase;
   };
 
   gitFastExport = import ./fast-export {
@@ -99,4 +100,6 @@ rec {
   git-remote-hg = callPackage ./git-remote-hg { };
 
   gitRemoteGcrypt = callPackage ./git-remote-gcrypt { };
+
+  git-extras = callPackage ./git-extras { };
 }

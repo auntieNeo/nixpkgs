@@ -24,7 +24,7 @@ let
   langsSpaces = stdenv.lib.concatStringsSep " " langs;
   major = "4";
   minor = "3";
-  patch = "1";
+  patch = "5";
   tweak = "2";
   subdir = "${major}.${minor}.${patch}";
   version = "${subdir}${if tweak == "" then "" else "."}${tweak}";
@@ -40,9 +40,9 @@ let
        sha256 = "10amvz7fzr1kcy3svfspkdykmspqgpjdmk44cyr406wi7v4lwnf9";
      };
 
-     configureFlags = "--with-boost=${boost}";
+     buildInputs = [ boost mdds pkgconfig ];
 
-     buildInputs = [ boost boost.lib mdds pkgconfig ];
+     configureFlags = [ "--with-boost=${boost.dev}" ];
   };
 
   fetchThirdParty = {name, md5, brief, subDir ? ""}: fetchurl {
@@ -60,9 +60,10 @@ let
       (x: x.name == "${name}.tar.bz2")
       ("Error: update liborcus version inside LO expression")
       (import ./libreoffice-srcs.nix));
-    configureFlags = "--with-boost=${boost}";
 
-    buildInputs = [ boost boost.lib mdds pkgconfig zlib libixion ];
+    buildInputs = [ boost mdds pkgconfig zlib libixion ];
+
+    configureFlags = [ "--with-boost=${boost.dev}" ];
   };
 
   fetchSrc = {name, sha256}: fetchurl {
@@ -79,14 +80,14 @@ let
 
     translations = fetchSrc {
       name = "translations";
-      sha256 = "0vj1fpr99cb124hag0hijpp3pfbbi0gak56qiikxbwbq7mab6p9h";
+      sha256 = "0xqvfmfab0hq3hcq76hs7ybv32i02lzl8xghilbjf12k1wgqy96c";
     };
 
     # TODO: dictionaries
 
     help = fetchSrc {
       name = "help";
-      sha256 = "1q0vzfla764zjz6xcx6r4nc8rikwb3pr2jsraj28hhwr5b26gdfz";
+      sha256 = "14kdhd9pjy0a7dkyx03a73m5iy3qr3ki2xqkinhml24f3n9qddbq";
     };
 
   };
@@ -96,7 +97,7 @@ stdenv.mkDerivation rec {
 
   src = fetchurl {
     url = "http://download.documentfoundation.org/libreoffice/src/${subdir}/libreoffice-${version}.tar.xz";
-    sha256 = "0s1j5y1gfyf3r53bbqnzirx17p49i8ah07737nrzik0ggps3lgd5";
+    sha256 = "0dr6xzdnnyhhysayz1yhnmv0l3c14kpnlhwd5h66qyzkd4d85rkq";
   };
 
   # Openoffice will open libcups dynamically, so we link it directly
@@ -113,9 +114,7 @@ stdenv.mkDerivation rec {
   '' + (stdenv.lib.concatMapStrings (f: "ln -sv ${f} $sourceRoot/src/${f.outputHash}-${f.name}\nln -sv ${f} $sourceRoot/src/${f.name}\n") srcs.third_party)
   + ''
     ln -sv ${srcs.help} $sourceRoot/src/${srcs.help.name}
-    tar xf $sourceRoot/src/${srcs.help.name} -C $sourceRoot/../
-    ln -sv ${srcs.translations} $sourceRoot/src/${srcs.translations.name}
-    tar xf $sourceRoot/src/${srcs.translations.name} -C $sourceRoot/../
+    ln -svf ${srcs.translations} $sourceRoot/src/${srcs.translations.name}
   '';
 
   patchPhase = ''
@@ -177,12 +176,19 @@ stdenv.mkDerivation rec {
 
     ln -s $out/lib/libreoffice/share/xdg $out/share/applications
     for f in $out/share/applications/*.desktop; do
-      substituteInPlace "$f" --replace "Exec=libreoffice4.0" "Exec=$out/bin/soffice"
+      substituteInPlace "$f" --replace "Exec=libreofficedev${major}.${minor}" "Exec=$out/bin/soffice"
+      substituteInPlace "$f" --replace "Exec=libreoffice${major}.${minor}" "Exec=$out/bin/soffice"
       substituteInPlace "$f" --replace "Exec=libreoffice" "Exec=$out/bin/soffice"
     done
+
+    mkdir -p "$out/share/desktop"
+    cp -r sysui/desktop/icons  "$out/share/desktop"
+    sed -re 's@Icon=libreofficedev[0-9.]*-?@Icon=@' -i "$out/share/applications/"*.desktop
   '';
 
   configureFlags = [
+    "--with-boost=${boost.dev}"
+    "--with-boost-libdir=${boost.lib}/lib"
     "--with-vendor=NixOS"
 
     # Without these, configure does not finish
@@ -198,7 +204,6 @@ stdenv.mkDerivation rec {
     "--with-system-headers"
     "--with-system-openssl"
     "--with-system-openldap"
-    "--with-boost-libdir=${boost.lib}/lib"
     "--without-system-libwps"  # TODO
     "--without-doxygen"
 
@@ -208,7 +213,7 @@ stdenv.mkDerivation rec {
     "--disable-postgresql-sdbc"
     "--with-package-format=native"
     "--enable-epm"
-    "--with-jdk-home=${jdk}/lib/openjdk"
+    "--with-jdk-home=${jdk.home}"
     "--with-ant-home=${ant}/lib/ant"
     "--without-fonts"
     "--without-myspell-dicts"
@@ -236,7 +241,7 @@ stdenv.mkDerivation rec {
   '';
 
   buildInputs = with xorg;
-    [ ant ArchiveZip autoconf automake bison boost boost.lib cairo clucene_core
+    [ ant ArchiveZip autoconf automake bison boost cairo clucene_core
       CompressZlib cppunit cups curl db dbus_glib expat file flex fontconfig
       freetype GConf getopt gnome_vfs gperf gst_plugins_base gstreamer gtk
       hunspell icu jdk kde4.kdelibs lcms libcdr libexttextcat unixODBC libjpeg

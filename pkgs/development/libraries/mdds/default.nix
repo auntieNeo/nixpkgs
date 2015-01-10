@@ -1,12 +1,12 @@
 { stdenv, fetchurl }:
 
 stdenv.mkDerivation rec {
-  version = "0.10.3";
+  version = "0.11.2";
   name = "mdds-${version}";
 
   src = fetchurl {
     url = "http://kohei.us/files/mdds/src/mdds_${version}.tar.bz2";
-    sha256 = "1hp0472mcsgzrz1v60jpywxrrqmpb8bchfsi7ydmp6vypqnr646v";
+    sha256 = "1ax50ahgl549gw76p8kbd5cb0kkihrn59638mppq4raxng40s2nd";
   };
 
   postInstall = ''

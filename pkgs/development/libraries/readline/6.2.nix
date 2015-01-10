@@ -14,6 +14,7 @@ stdenv.mkDerivation (rec {
   patches =
     [ ./link-against-ncurses.patch
       ./no-arch_only.patch
+      ./clang.patch
     ]
     ++
     (let
@@ -37,7 +38,7 @@ stdenv.mkDerivation (rec {
       reedit those lines, and perform csh-like history expansion on
       previous commands.
 
-      The history facilites are also placed into a separate library,
+      The history facilities are also placed into a separate library,
       the History library, as part of the build process.  The History
       library may be used without Readline in applications which
       desire its capabilities.
@@ -48,6 +49,7 @@ stdenv.mkDerivation (rec {
     license = stdenv.lib.licenses.gpl3Plus;
 
     maintainers = [ stdenv.lib.maintainers.ludo ];
+    branch = "6.2";
   };
 }
 

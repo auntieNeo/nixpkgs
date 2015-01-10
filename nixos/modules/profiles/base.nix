@@ -10,6 +10,8 @@
     pkgs.w3m # needed for the manual anyway
     pkgs.testdisk # useful for repairing boot problems
     pkgs.mssys # for writing Microsoft boot sectors / MBRs
+    pkgs.efibootmgr
+    pkgs.efivar
     pkgs.parted
     pkgs.gptfdisk
     pkgs.ddrescue
@@ -34,7 +36,6 @@
     pkgs.xfsprogs
     pkgs.jfsutils
     pkgs.f2fs-tools
-    #pkgs.jfsrec # disabled because of Boost dependency
 
     # Some compression/archiver tools.
     pkgs.unzip

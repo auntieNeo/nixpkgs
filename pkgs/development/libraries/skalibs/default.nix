@@ -1,56 +1,30 @@
-{stdenv, fetchurl}:
+{ stdenv, fetchurl }:
 
 let
 
-  version = "1.6.0.0";
+  version = "2.0.0.0";
 
 in stdenv.mkDerivation rec {
+
   name = "skalibs-${version}";
 
   src = fetchurl {
     url = "http://skarnet.org/software/skalibs/${name}.tar.gz";
-    sha256 = "0jz3farll9n5jvz3g6wri99s6njkgmnf0r9jqjlg03f20dzv8c8w";
+    sha256 = "0cz30wqg8fnkwjlacs4s3sjs3l34sa91xgci95fmb187zhiq693n";
   };
 
-  sourceRoot = "prog/${name}";
+  dontDisableStatic = true;
 
-  # See http://skarnet.org/cgi-bin/archive.cgi?1:mss:75:201405:pkmodhckjklemogbplje
-  patches = [ ./getpeereid.patch ];
-
-  configurePhase = ''
-    pushd conf-compile
-
-    printf "$out/bin"     > conf-defaultpath
-    printf "$out/etc"     > conf-etc
-    printf "$out/bin"     > conf-install-command
-    printf "$out/include" > conf-install-include
-    printf "$out/libexec" > conf-install-libexec
-    printf "$out/lib"     > conf-install-library
-    printf "$out/lib"     > conf-install-library.so
-    printf "$out/sysdeps" > conf-install-sysdeps
-
-    # let nix builder strip things, cross-platform
-    truncate --size 0 conf-stripbins
-    truncate --size 0 conf-striplibs
-
-    rm -f flag-slashpackage
-    touch flag-allstatic
-    touch flag-forcedevr
-
-    popd
-  '';
-
-  preBuild = ''
-    patchShebangs src/sys
-  '';
-
-  preInstall = ''
-    mkdir -p "$out/etc"
-  '';
+  configureFlags = [
+    "--enable-force-devr"       # assume /dev/random works
+    "--libdir=\${prefix}/lib"
+    "--includedir=\${prefix}/include"
+    "--sysdepdir=\${prefix}/lib/skalibs/sysdeps"
+  ] ++ (if stdenv.isDarwin then [ "--disable-shared" ] else [ "--enable-shared" ]);
 
   meta = {
     homepage = http://skarnet.org/software/skalibs/;
-    description = "A set of general-purpose C programming libraries.";
+    description = "A set of general-purpose C programming libraries";
     platforms = stdenv.lib.platforms.all;
     license = stdenv.lib.licenses.isc;
   };

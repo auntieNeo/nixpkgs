@@ -4,8 +4,8 @@
 
 cabal.mkDerivation (self: {
   pname = "ghcjs-dom";
-  version = "0.1.1.0";
-  sha256 = "0ywxkp13n78skbcr0d1m5mgz23xds27sdfxswfc9zjcsb513w3gg";
+  version = "0.1.1.3";
+  sha256 = "0pdxb2s7fflrh8sbqakv0qi13jkn3d0yc32xhg2944yfjg5fvlly";
   buildDepends = [ ghcjsBase mtl text ];
   meta = {
     description = "DOM library that supports both GHCJS and WebKitGTK";

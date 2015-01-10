@@ -8,21 +8,26 @@ let
   cfg = config.users;
 
   passwordDescription = ''
-    The options <literal>hashedPassword</literal>,
-    <literal>password</literal> and <literal>passwordFile</literal>
+    The options <option>hashedPassword</option>,
+    <option>password</option> and <option>passwordFile</option>
     controls what password is set for the user.
-    <literal>hashedPassword</literal> overrides both
-    <literal>password</literal> and <literal>passwordFile</literal>.
-    <literal>password</literal> overrides <literal>passwordFile</literal>.
+    <option>hashedPassword</option> overrides both
+    <option>password</option> and <option>passwordFile</option>.
+    <option>password</option> overrides <option>passwordFile</option>.
     If none of these three options are set, no password is assigned to
     the user, and the user will not be able to do password logins.
-    If the option <literal>users.mutableUsers</literal> is true, the
+    If the option <option>users.mutableUsers</option> is true, the
     password defined in one of the three options will only be set when
     the user is created for the first time. After that, you are free to
     change the password with the ordinary user management commands. If
-    <literal>users.mutableUsers</literal> is false, you cannot change
+    <option>users.mutableUsers</option> is false, you cannot change
     user passwords, they will always be set according to the password
     options.
+  '';
+
+  hashedPasswordDescription = ''
+    To generate hashed password install <literal>mkpassword</literal>
+    package and run <literal>mkpasswd -m sha-512</literal>.
   '';
 
   userOpts = { name, config, ... }: {
@@ -155,7 +160,7 @@ let
         default = false;
         description = ''
           If true, the user's shell will be set to
-          <literal>cfg.defaultUserShell</literal>.
+          <option>users.defaultUserShell</option>.
         '';
       };
 
@@ -163,8 +168,9 @@ let
         type = with types; uniq (nullOr str);
         default = null;
         description = ''
-          Specifies the (hashed) password for the user.
+          Specifies the hashed password for the user.
           ${passwordDescription}
+          ${hashedPasswordDescription}
         '';
       };
 
@@ -191,6 +197,39 @@ let
           ${passwordDescription}
         '';
       };
+
+      initialHashedPassword = mkOption {
+        type = with types; uniq (nullOr str);
+        default = null;
+        description = ''
+          Specifies the initial hashed password for the user, i.e. the
+          hashed password assigned if the user does not already
+          exist. If <option>users.mutableUsers</option> is true, the
+          password can be changed subsequently using the
+          <command>passwd</command> command. Otherwise, it's
+          equivalent to setting the <option>password</option> option.
+
+          ${hashedPasswordDescription}
+        '';
+      };
+
+      initialPassword = mkOption {
+        type = with types; uniq (nullOr str);
+        default = null;
+        description = ''
+          Specifies the initial password for the user, i.e. the
+          password assigned if the user does not already exist. If
+          <option>users.mutableUsers</option> is true, the password
+          can be changed subsequently using the
+          <command>passwd</command> command. Otherwise, it's
+          equivalent to setting the <option>password</option>
+          option. The same caveat applies: the password specified here
+          is world-readable in the Nix store, so it should only be
+          used for guest accounts or passwords that will be changed
+          promptly.
+        '';
+      };
+
     };
 
     config = mkMerge
@@ -203,6 +242,14 @@ let
           home = mkDefault "/home/${name}";
           useDefaultShell = mkDefault true;
           isSystemUser = mkDefault false;
+        })
+        # If !mutableUsers, setting ‘initialPassword’ is equivalent to
+        # setting ‘password’ (and similarly for hashed passwords).
+        (mkIf (!cfg.mutableUsers && config.initialPassword != null) {
+          password = mkDefault config.initialPassword;
+        })
+        (mkIf (!cfg.mutableUsers && config.initialHashedPassword != null) {
+          hashedPassword = mkDefault config.initialHashedPassword;
         })
       ];
 
@@ -306,7 +353,8 @@ let
     users = mapAttrsToList (n: u:
       { inherit (u)
           name uid group description home shell createHome isSystemUser
-          password passwordFile hashedPassword;
+          password passwordFile hashedPassword
+          initialPassword initialHashedPassword;
       }) cfg.extraUsers;
     groups = mapAttrsToList (n: g:
       { inherit (g) name gid;
@@ -326,21 +374,24 @@ in {
       type = types.bool;
       default = true;
       description = ''
-        If true, you are free to add new users and groups to the system
+        If set to <literal>true</literal>, you are free to add new users and groups to the system
         with the ordinary <literal>useradd</literal> and
         <literal>groupadd</literal> commands. On system activation, the
         existing contents of the <literal>/etc/passwd</literal> and
         <literal>/etc/group</literal> files will be merged with the
         contents generated from the <literal>users.extraUsers</literal> and
-        <literal>users.extraGroups</literal> options. If
-        <literal>mutableUsers</literal> is false, the contents of the user and
-        group files will simply be replaced on system activation. This also
-        holds for the user passwords; if this option is false, all changed
-        passwords will be reset according to the
-        <literal>users.extraUsers</literal> configuration on activation. If
-        this option is true, the initial password for a user will be set
+        <literal>users.extraGroups</literal> options.
+        The initial password for a user will be set
         according to <literal>users.extraUsers</literal>, but existing passwords
         will not be changed.
+
+        <warning><para>
+        If set to <literal>false</literal>, the contents of the user and
+        group files will simply be replaced on system activation. This also
+        holds for the user passwords; all changed
+        passwords will be reset according to the
+        <literal>users.extraUsers</literal> configuration on activation.
+        </para></warning>
       '';
     };
 
@@ -386,24 +437,12 @@ in {
       options = [ groupOpts ];
     };
 
+    # FIXME: obsolete - will remove.
     security.initialRootPassword = mkOption {
       type = types.str;
       default = "!";
       example = "";
-      description = ''
-        The (hashed) password for the root account set on initial
-        installation. The empty string denotes that root can login
-        locally without a password (but not via remote services such
-        as SSH, or indirectly via <command>su</command> or
-        <command>sudo</command>). The string <literal>!</literal>
-        prevents root from logging in using a password.
-        Note that setting this option sets
-        <literal>users.extraUsers.root.hashedPassword</literal>.
-        Also, if <literal>users.mutableUsers</literal> is false
-        you cannot change the root password manually, so in that case
-        the name of this option is a bit misleading, since it will define
-        the root password beyond the user initialisation phase.
-      '';
+      visible = false;
     };
 
   };
@@ -421,7 +460,7 @@ in {
         shell = mkDefault cfg.defaultUserShell;
         group = "root";
         extraGroups = [ "grsecurity" ];
-        hashedPassword = mkDefault config.security.initialRootPassword;
+        initialHashedPassword = mkDefault config.security.initialRootPassword;
       };
       nobody = {
         uid = ids.uids.nobody;

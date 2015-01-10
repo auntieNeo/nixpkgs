@@ -1,17 +1,17 @@
 { stdenv, fetchFromGitHub, nodejs, which, python27, utillinux }:
 
 let
-  date = "20141023";
-  rev = "c7eed6b14688458e16fab368f68904e530651a30";
+  version = "13"; # see ${src}/util/version/Version.h
+  date = "20150102";
 in
 stdenv.mkDerivation {
-  name = "cjdns-${date}-${stdenv.lib.strings.substring 0 7 rev}";
+  name = "cjdns-${version}-${date}";
 
   src = fetchFromGitHub {
     owner = "cjdelisle";
     repo = "cjdns";
-    inherit rev;
-    sha256 = "11z8dk7byxh9pfv7mhfvnk465qln1g7z8c8f822623d59lwjpbs1";
+    rev = "da108a24c958b6b8f592bcc6f89990923af0099e";
+    sha256 = "0x4161bl4wii4530ja8i1b8qsab9var8yggj7ipvcijd7v3hfvx7";
   };
 
   buildInputs = [ which python27 nodejs ] ++

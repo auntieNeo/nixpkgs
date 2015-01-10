@@ -10,6 +10,9 @@ stdenv.mkDerivation rec {
 
   buildInputs = [ gmp ];
 
+  CFLAGS = "-I${gmp}/include";
+  LDFLAGS = if stdenv.isDarwin then "-L${gmp}/lib" else null;
+
   configureFlags =
     /* Work around a FreeBSD bug that otherwise leads to segfaults in the test suite:
           http://hydra.bordeaux.inria.fr/build/34862

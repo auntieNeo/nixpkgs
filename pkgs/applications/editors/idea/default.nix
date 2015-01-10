@@ -56,9 +56,9 @@ let
         snappyPath="lib/snappy-java-1.0.5"
         7z x -o"$snappyPath" "$snappyPath.jar"
         if [ "${stdenv.system}" == "x86_64-linux" ]; then
-          patchelf --set-rpath ${stdenv.gcc.gcc}/lib64 "$snappyPath/org/xerial/snappy/native/Linux/amd64/libsnappyjava.so"
+          patchelf --set-rpath ${stdenv.cc.gcc}/lib64 "$snappyPath/org/xerial/snappy/native/Linux/amd64/libsnappyjava.so"
         else
-          patchelf --set-rpath ${stdenv.gcc.gcc}/lib "$snappyPath/org/xerial/snappy/native/Linux/i386/libsnappyjava.so"
+          patchelf --set-rpath ${stdenv.cc.gcc}/lib "$snappyPath/org/xerial/snappy/native/Linux/i386/libsnappyjava.so"
         fi
         7z a -tzip "$snappyPath.jar" ./"$snappyPath"/*
         rm -vr "$snappyPath"
@@ -70,19 +70,11 @@ let
       cp -va . "$out/$name"
       ln -s "$out/$name/bin/${loName}.png" "$out/share/pixmaps/"
 
-      [ -d ${jdk}/lib/openjdk ] \
-        && jdk=${jdk}/lib/openjdk \
-        || jdk=${jdk}
-
-      if [ "${stdenv.system}" == "x86_64-linux" ]; then
-        makeWrapper "$out/$name/bin/fsnotifier64" "$out/bin/fsnotifier64"
-      else
-        makeWrapper "$out/$name/bin/fsnotifier" "$out/bin/fsnotifier"
-      fi
+      jdk=${jdk.home}
 
       makeWrapper "$out/$name/bin/${loName}.sh" "$out/bin/${loName}" \
         --prefix PATH : "${jdk}/bin:${coreutils}/bin:${gnugrep}/bin:${which}/bin:${git}/bin" \
-        --prefix LD_RUN_PATH : "${stdenv.gcc.gcc}/lib/" \
+        --prefix LD_RUN_PATH : "${stdenv.cc.gcc}/lib/" \
         --prefix JDK_HOME : "$jdk" \
         --prefix ${hiName}_JDK : "$jdk"
 
@@ -109,9 +101,77 @@ let
       };
     });
 
+  buildClion = { name, version, build, src, license, description }:
+    (mkIdeaProduct rec {
+      inherit name version build src;
+      patchSnappy = false;
+      product = "CLion";
+      meta = with stdenv.lib; {
+        homepage = "https://www.jetbrains.com/clion/";
+        inherit description license;
+        longDescription = ''
+          Enhancing productivity for every C and C++
+          developer on Linux, OS X and Windows.
+        '';
+        maintainers = with maintainers; [ edwtjo ];
+        platforms = platforms.linux;
+      };
+    });
+
+  buildIdea = { name, version, build, src, license, description }:
+    (mkIdeaProduct rec {
+      inherit name version build src;
+      patchSnappy = false;
+      product = "IDEA";
+      meta = with stdenv.lib; {
+        homepage = "https://www.jetbrains.com/idea/";
+        inherit description license;
+        longDescription = ''
+          IDE for Java SE, Groovy & Scala development Powerful
+          environment for building Google Android apps Integration
+          with JUnit, TestNG, popular SCMs, Ant & Maven.
+        '';
+        maintainers = with maintainers; [ edwtjo ];
+        platforms = platforms.linux;
+      };
+    });
+
+  buildRubyMine = { name, version, build, src, license, description }:
+    (mkIdeaProduct rec {
+      inherit name version build src;
+      patchSnappy = false;
+      product = "RubyMine";
+      meta = with stdenv.lib; {
+        homepage = "https://www.jetbrains.com/ruby/";
+        inherit description license;
+        longDescription = description;
+        maintainers = with maintainers; [ edwtjo ];
+        platforms = platforms.linux;
+      };
+    });
+
+  buildPhpStorm = { name, version, build, src, license, description }:
+    (mkIdeaProduct {
+      inherit name version build src;
+      product = "PhpStorm";
+      patchSnappy = false;
+      meta = with stdenv.lib; {
+        homepage = "https://www.jetbrains.com/phpstorm/";
+        inherit description license;
+        longDescription = ''
+          PhpStorm provides an editor for PHP, HTML and JavaScript
+          with on-the-fly code analysis, error prevention and
+          automated refactorings for PHP and JavaScript code.
+        '';
+        maintainers = with maintainers; [ schristo ];
+        platforms = platforms.linux;
+      };
+    });
+
   buildPycharm = { name, version, build, src, license, description }:
     (mkIdeaProduct rec {
       inherit name version build src;
+      patchSnappy = false;
       product = "PyCharm";
       meta = with stdenv.lib; {
         homepage = "https://www.jetbrains.com/pycharm/";
@@ -136,115 +196,104 @@ let
       propagatedUserEnvPkgs = [ python ];
     };
 
-  buildIdea = { name, version, build, src, license, description }:
-    (mkIdeaProduct rec {
-      inherit name version build src;
-      product = "IDEA";
-      meta = with stdenv.lib; {
-        homepage = "https://www.jetbrains.com/idea/";
-        inherit description license;
-        longDescription = ''
-          IDE for Java SE, Groovy & Scala development Powerful
-          environment for building Google Android apps Integration
-          with JUnit, TestNG, popular SCMs, Ant & Maven.
-        '';
-        maintainers = with maintainers; [ edwtjo ];
-        platforms = platforms.linux;
-      };
-    });
-
-  buildPhpStorm = { name, version, build, src, license, description }:
-    (mkIdeaProduct {
-      inherit name version build src;
-      product = "PhpStorm";
-      patchSnappy = false;
-      meta = with stdenv.lib; {
-        homepage = "https://www.jetbrains.com/phpstorm/";
-        inherit description license;
-        longDescription = ''
-          PhpStorm provides an editor for PHP, HTML and JavaScript
-          with on-the-fly code analysis, error prevention and
-          automated refactorings for PHP and JavaScript code.
-        '';
-        maintainers = with maintainers; [ schristo ];
-        platforms = platforms.linux;
-      };
-    });
-
 in
 
 {
 
   android-studio = buildAndroidStudio rec {
     name = "android-studio-${version}";
-    version = "0.8.12";
-    build = "135.1503853";
+    version = "1.0.2";
+    build = "135.1653844";
     description = "Android development environment based on IntelliJ IDEA";
     license = stdenv.lib.licenses.asl20;
     src = fetchurl {
       url = "https://dl.google.com/dl/android/studio/ide-zips/${version}" +
             "/android-studio-ide-${build}-linux.zip";
-      sha256 = "225c8b2f90b9159c465eae5797132350660994184a568c631d4383313a510695";
+      sha256 = "0y20gp5444c2lwyzhlppjpkb657qbgpskj31lwyfhx6xyqy83159";
+    };
+  };
+
+  clion = buildClion rec {
+    name = "clion";
+    version = "eap";
+    build = "140.1221.2";
+    description  = "C/C++ IDE. New. Intelligent. Cross-platform.";
+    license = stdenv.lib.licenses.unfree;
+    src = fetchurl {
+      url = "http://download.jetbrains.com/cpp/${name}-${build}.tar.gz";
+      sha256 = "0gf809plnw89dgn47j6hsh5nv0bpdynjnl1rg8wv7jaz2zx9bqcg";
     };
   };
 
   idea-community = buildIdea rec {
     name = "idea-community-${version}";
-    version = "13.1.5";
-    build = "IC-135.1289";
+    version = "14.0.2";
+    build = "IC-139.659";
     description = "Integrated Development Environment (IDE) by Jetbrains, community edition";
     license = stdenv.lib.licenses.asl20;
     src = fetchurl {
       url = "http://download-ln.jetbrains.com/idea/ideaIC-${version}.tar.gz";
-      sha256 = "e08b9adad0ed9aa62a43f3026a1b499d1663710314d00a3bec2e171a6c375f09";
+      sha256 = "0g8f66bdxdmsbv2r1jc308by5ca92ifczprf0gwy5bs2xsvxxwlf";
     };
   };
 
   idea-ultimate = buildIdea rec {
     name = "idea-ultimate-${version}";
-    version = "13.1.5";
-    build = "IU-135.1289";
+    version = "14.0.2";
+    build = "IU-139.659";
     description = "Integrated Development Environment (IDE) by Jetbrains, requires paid license";
     license = stdenv.lib.licenses.unfree;
     src = fetchurl {
       url = "http://download-ln.jetbrains.com/idea/ideaIU-${version}.tar.gz";
-      sha256 = "0800b1ffc135f884e46f1004289fb75850148d705afc447d3374cfd281c231a2";
+      sha256 = "0swd3lyrlcdlsgp350sa741bkmndlck1ss429f9faf3hm4s2y0k5";
+    };
+  };
+
+  ruby-mine = buildRubyMine rec {
+    name = "ruby-mine-${version}";
+    version = "7.0";
+    build = "135.1104";
+    description = "The Most Intelligent Ruby and Rails IDE";
+    license = stdenv.lib.licenses.unfree;
+    src = fetchurl {
+      url = "http://download.jetbrains.com/ruby/RubyMine-${version}.tar.gz";
+      sha256 = "0xsx44gaddarkw5k4yjidzwkayf2xvsxklfzdnzcck4rg4vyk4v4";
     };
   };
 
   pycharm-community = buildPycharm rec {
     name = "pycharm-community-${version}";
-    version = "3.4.1";
-    build = "135.1057";
-    description = "PyCharm 3.4 Community Edition";
+    version = "4.0.1";
+    build = "139.574";
+    description = "PyCharm 4.0 Community Edition";
     license = stdenv.lib.licenses.asl20;
     src = fetchurl {
       url = "http://download.jetbrains.com/python/${name}.tar.gz";
-      sha256 = "96427b1e842e7c09141ec4d3ede627c5ca7d821c0d6c98169b56a34f9035ef64";
+      sha256 = "0jh0sxi5dpgpw7ga018fby7zvb4i9k49vwl8422lfcrgckdz9nv2";
     };
   };
 
   pycharm-professional = buildPycharm rec {
     name = "pycharm-professional-${version}";
-    version = "3.4.1";
-    build = "135.1057";
-    description = "PyCharm 3.4 Professional Edition";
+    version = "4.0.1";
+    build = "139.574";
+    description = "PyCharm 4.0 Professional Edition";
     license = stdenv.lib.licenses.unfree;
     src = fetchurl {
       url = "http://download.jetbrains.com/python/${name}.tar.gz";
-      sha256 = "e4f85f3248e8985ac9f8c326543f979b47ba1d7ac6b128a2cf2b3eb8ec545d2b";
+      sha256 = "04yjhg6vi2kz00sy8zg4wkz26ai90vbp0cnd850ynsab0jsy24w4";
     };
   };
 
   phpstorm = buildPhpStorm rec {
     name = "phpstorm-${version}";
-    version = "8.0.1";
-    build = "PS-138.2001";
+    version = "8.0.2";
+    build = "PS-139.732";
     description = "Professional IDE for Web and PHP developers";
     license = stdenv.lib.licenses.unfree;
     src = fetchurl {
       url = "http://download.jetbrains.com/webide/PhpStorm-${version}.tar.gz";
-      sha256 = "0d46442aa32174fe16846c3c31428178ab69b827d2e0ce31f633f13b64c01afc";
+      sha256 = "01b8vx6swi71sd0rc7i1jnicilqp11ch3zrm8gwb6xh1pmmpdirf";
     };
   };
 

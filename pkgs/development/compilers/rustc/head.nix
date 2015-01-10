@@ -1,8 +1,8 @@
 { stdenv, fetchurl, fetchgit, which, file, perl, curl, python27, makeWrapper
-, tzdata, git
+, tzdata, git, valgrind, procps, coreutils
 }:
 
-assert stdenv.gcc.gcc != null;
+assert !stdenv.isFreeBSD;
 
 /* Rust's build process has a few quirks :
 
@@ -18,30 +18,36 @@ assert stdenv.gcc.gcc != null;
 
 */
 
-with ((import ./common.nix) {inherit stdenv; version = "0.12.0-pre-127-ga0ea210";});
+let shortVersion = "0.13-dev";
+    rev = "6539cb417f4a7c2d9d1afce44c196578d2b67f38";
+    revShort = builtins.substring 0 7 rev;
+in
 
-let snapshot = if stdenv.system == "i686-linux"
-      then "0644637db852db8a6c603ded0531ccaa60291bd3"
+with ((import ./common.nix) {inherit stdenv; version = "${shortVersion}-g${revShort}"; });
+
+let snapshotHash = if stdenv.system == "i686-linux"
+      then "b880b98d832c9a049b8ef6a50df50061e363de5a"
       else if stdenv.system == "x86_64-linux"
-      then "656b8c23fbb97794e85973aca725a4b9cd07b29e"
+      then "82a09c162474b69d2d1e4e8399086f3f0f4e31c3"
       else if stdenv.system == "i686-darwin"
-      then "e4d9709fcfe485fcca00f0aa1fe456e2f164ed96"
+      then "569055bb10d96ab25f78ecf2c80ffbccd5e69b8d"
       else if stdenv.system == "x86_64-darwin"
-      then "6b1aa5a441965da87961be81950e8663eadba377"
-      else abort "no-snapshot for platform ${stdenv.system}";
-    snapshotDate = "2014-10-10";
-    snapshotRev = "78a7676";
-    snapshotName = "rust-stage0-${snapshotDate}-${snapshotRev}-${platform}-${snapshot}.tar.bz2";
+      then "cff1f9ebd63dae6890359b7d353bd9486d8ecdfc"
+      else abort "no snapshot for platform ${stdenv.system}";
+    snapshotDate = "2015-01-04";
+    snapshotRev = "b2085d9";
+    snapshotName = "rust-stage0-${snapshotDate}-${snapshotRev}-${platform}-${snapshotHash}.tar.bz2";
+in
 
-in stdenv.mkDerivation {
+stdenv.mkDerivation {
   inherit name;
   inherit version;
   inherit meta;
 
   src = fetchgit {
     url = https://github.com/rust-lang/rust;
-    rev = "a0ea210b394aa1b61d341593a3f9098fe5bf7806";
-    sha256 = "0flwzj6dywaq9s77ayinshqbz8na2a1jabkr9s7zj74s2ya5096i";
+    inherit rev;
+    sha256 = "14nc42j46hvlqms77245vil2wplmvci3ramxrmjyjqg0bql1w28m";
   };
 
   # We need rust to build rust. If we don't provide it, configure will try to download it.
@@ -49,31 +55,39 @@ in stdenv.mkDerivation {
     name = "rust-stage0";
     src = fetchurl {
       url = "http://static.rust-lang.org/stage0-snapshots/${snapshotName}";
-      sha1 = snapshot;
+      sha1 = snapshotHash;
     };
     dontStrip = true;
     installPhase = ''
       mkdir -p "$out"
       cp -r bin "$out/bin"
     '' + (if stdenv.isLinux then ''
-      patchelf --interpreter "${stdenv.glibc}/lib/${stdenv.gcc.dynamicLinker}" \
-               --set-rpath "${stdenv.gcc.gcc}/lib/:${stdenv.gcc.gcc}/lib64/" \
+      patchelf --interpreter "${stdenv.glibc}/lib/${stdenv.cc.dynamicLinker}" \
+               --set-rpath "${stdenv.cc.gcc}/lib/:${stdenv.cc.gcc}/lib64/" \
                "$out/bin/rustc"
     '' else "");
   };
 
-  configureFlags = [ "--enable-local-rust" "--local-rust-root=$snapshot" ];
+  configureFlags = [ "--enable-local-rust" "--local-rust-root=$snapshot" ]
+                ++ stdenv.lib.optional (stdenv.cc ? clang) "--enable-clang";
 
   # The compiler requires cc, so we patch the source to tell it where to find it
-  patches = [ ./hardcode_paths.HEAD.patch ./local_stage0.HEAD.patch ];
+  patches = [ ./hardcode_paths.HEAD.patch ./local_stage0.HEAD.patch ]
+            ++ stdenv.lib.optional stdenv.needsPax ./grsec.HEAD.patch;
+
   postPatch = ''
-    substituteInPlace src/librustc/back/link.rs \
-      --subst-var-by "ccPath" "${stdenv.gcc}/bin/cc"
+    substituteInPlace src/librustc_trans/back/link.rs \
+      --subst-var-by "ccPath" "${stdenv.cc}/bin/cc"
     substituteInPlace src/librustc_back/archive.rs \
-      --subst-var-by "arPath" "${stdenv.gcc.binutils}/bin/ar"
+      --subst-var-by "arPath" "${stdenv.cc.binutils}/bin/ar"
+
+    substituteInPlace src/rust-installer/gen-install-script.sh \
+      --replace /bin/echo "${coreutils}/bin/echo"
+    substituteInPlace src/rust-installer/gen-installer.sh \
+      --replace /bin/echo "${coreutils}/bin/echo"
   '';
 
-  buildInputs = [ which file perl curl python27 makeWrapper git ];
+  buildInputs = [ which file perl curl python27 makeWrapper git valgrind procps ];
 
   enableParallelBuilding = false; # disabled due to rust-lang/rust#16305
 

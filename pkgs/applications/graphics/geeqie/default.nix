@@ -1,32 +1,29 @@
-{ stdenv, fetchgit, pkgconfig, autoconf, automake, gtk, libpng, exiv2, lcms
-, intltool, gettext, libchamplain, fbida }:
+{ stdenv, fetchurl, pkgconfig, gtk, libpng, exiv2
+, lcms, intltool, gettext, libchamplain, fbida
+}:
 
 stdenv.mkDerivation rec {
   name = "geeqie-${version}";
-  version = "1.2";
+  version = "1.1";
 
-  src = fetchgit {
-    url = "git://gitorious.org/geeqie/geeqie.git";
-    rev = "refs/tags/v${version}";
-    sha256 = "1h9w0jrcqcp5jjgmks5pvpppnfxhcd1s3vqlyb3qyil2wfk8n8wp";
+  src = fetchurl {
+    url = "mirror://sourceforge/geeqie/${name}.tar.gz";
+    sha256 = "1kzy39z9505xkayyx7rjj2wda76xy3ch1s5z35zn8yli54ffhi2m";
   };
-
-  preConfigure = "./autogen.sh";
 
   configureFlags = [ "--enable-gps" ];
 
-  buildInputs =
-    [ pkgconfig autoconf automake gtk libpng exiv2 lcms intltool gettext
-      libchamplain
-    ];
+  buildInputs = [
+    pkgconfig gtk libpng exiv2 lcms intltool gettext
+    #libchamplain
+  ];
 
-  postInstall =
-    ''
-      # Allow geeqie to find exiv2 and exiftran, necessary to
-      # losslessly rotate JPEG images.
-      sed -i $out/lib/geeqie/geeqie-rotate \
-          -e '1 a export PATH=${exiv2}/bin:${fbida}/bin:$PATH'
-    '';
+  postInstall = ''
+    # Allow geeqie to find exiv2 and exiftran, necessary to
+    # losslessly rotate JPEG images.
+    sed -i $out/lib/geeqie/geeqie-rotate \
+        -e '1 a export PATH=${exiv2}/bin:${fbida}/bin:$PATH'
+  '';
 
   meta = with stdenv.lib; {
     description = "Lightweight GTK+ based image viewer";

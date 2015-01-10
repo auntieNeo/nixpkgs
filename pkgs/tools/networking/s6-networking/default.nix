@@ -1,13 +1,8 @@
-{ stdenv
-, execline
-, fetchurl
-, s6Dns
-, skalibs
-}:
+{ stdenv, execline, fetchurl, s6Dns, skalibs }:
 
 let
 
-  version = "0.1.0.0";
+  version = "2.0.0.0";
 
 in stdenv.mkDerivation rec {
 
@@ -15,47 +10,27 @@ in stdenv.mkDerivation rec {
 
   src = fetchurl {
     url = "http://www.skarnet.org/software/s6-networking/${name}.tar.gz";
-    sha256 = "1np9m2j1i2450mbcjvpbb56kv3wc2fbyvmv2a039q61j2lk6vjz7";
+    sha256 = "0k2i0g5lsvh1gz90ixwdip1pngj9vd45d4fpmdg075vd8zhh7j37";
   };
 
-  buildInputs = [ skalibs s6Dns execline ];
+  dontDisableStatic = true;
 
-  sourceRoot = "net/${name}";
-
-  configurePhase = ''
-    pushd conf-compile
-
-    printf "$out/bin"           > conf-install-command
-    printf "$out/include"       > conf-install-include
-    printf "$out/lib"           > conf-install-library
-    printf "$out/lib"           > conf-install-library.so
-
-    # let nix builder strip things, cross-platform
-    truncate --size 0 conf-stripbins
-    truncate --size 0 conf-striplibs
-
-    printf "${skalibs}/sysdeps"      > import
-
-    rm -f path-include
-    rm -f path-library
-    for dep in "${execline}" "${s6Dns}" "${skalibs}"; do
-      printf "%s\n" "$dep/include" >> path-include
-      printf "%s\n" "$dep/lib"     >> path-library
-    done
-
-    rm -f flag-slashpackage
-    touch flag-allstatic
-
-    popd
-  '';
-
-  preBuild = ''
-    patchShebangs src/sys
-  '';
+  configureFlags = [
+    "--with-sysdeps=${skalibs}/lib/skalibs/sysdeps"
+    "--with-include=${skalibs}/include"
+    "--with-include=${execline}/include"
+    "--with-include=${s6Dns}/include"
+    "--with-lib=${skalibs}/lib"
+    "--with-lib=${execline}/lib"
+    "--with-lib=${s6Dns}/lib"
+    "--with-dynlib=${skalibs}/lib"
+    "--with-dynlib=${execline}/lib"
+    "--with-dynlib=${s6Dns}/lib"
+  ];
 
   meta = {
     homepage = http://www.skarnet.org/software/s6-networking/;
-    description = "A suite of small networking utilities for Unix systems.";
+    description = "A suite of small networking utilities for Unix systems";
     platforms = stdenv.lib.platforms.all;
     license = stdenv.lib.licenses.isc;
   };
