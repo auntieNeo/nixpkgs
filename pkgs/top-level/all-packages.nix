@@ -9662,6 +9662,8 @@ let
 
   dmenu2 = callPackage ../applications/misc/dmenu2 { };
 
+  dmenu-wl = callPackage ../applications/misc/dmenu-wl { };
+
   dmtx = dmtx-utils;
 
   dmtx-utils = callPackage (import ../tools/graphics/dmtx-utils) {
@@ -11061,6 +11063,8 @@ let
   st = callPackage ../applications/misc/st {
     conf = config.st.conf or null;
   };
+
+  st-wl = callPackage ../applications/misc/st-wl { };
 
   stag = callPackage ../applications/misc/stag {
     curses = ncurses;

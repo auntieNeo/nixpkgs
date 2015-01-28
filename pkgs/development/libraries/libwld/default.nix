@@ -19,6 +19,8 @@ stdenv.mkDerivation rec {
 
   makeFlags = "-e PREFIX=\${out}";
 
+  # NOTE: swc-launch requires set-uid to become DRM master
+  # See <https://github.com/michaelforney/swc/issues/16>
   meta = {
     description = "A primitive drawing library targeted at Wayland";
     homepage = https://github.com/michaelforney/wld;
