@@ -16,14 +16,25 @@ let
     let
 
       mkDerivation = pkgs.callPackage ./generic-builder.nix {
-        inherit stdenv ghc;
+        inherit stdenv;
         inherit (pkgs) fetchurl pkgconfig glibcLocales coreutils gnugrep gnused;
-        inherit (self) jailbreak-cabal;
+        inherit (self) ghc jailbreak-cabal;
         hscolour = overrideCabal self.hscolour (drv: {
           isLibrary = false;
-          noHaddock = true;
+          doHaddock = false;
           hyperlinkSource = false;      # Avoid depending on hscolour for this build.
           postFixup = "rm -rf $out/lib $out/share $out/nix-support";
+        });
+        cpphs = overrideCabal (self.cpphs.overrideScope (self: super: {
+          mkDerivation = drv: super.mkDerivation (drv // {
+            enableSharedExecutables = false;
+            enableSharedLibraries = false;
+            doHaddock = false;
+            useCpphs = false;
+          });
+        })) (drv: {
+            isLibrary = false;
+            postFixup = "rm -rf $out/lib $out/share $out/nix-support";
         });
       };
 
@@ -41,9 +52,11 @@ let
     in
       import ./hackage-packages.nix { inherit pkgs stdenv callPackage; } self // {
 
-        inherit ghc mkDerivation callPackage;
+        inherit mkDerivation callPackage;
 
         ghcWithPackages = pkgs: callPackage ./with-packages-wrapper.nix { packages = pkgs self; };
+
+        ghc = ghc // { withPackages = self.ghcWithPackages; };
 
       };
 

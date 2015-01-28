@@ -1,6 +1,6 @@
 { pkgs }:
 
-with import ./lib.nix;
+with import ./lib.nix { inherit pkgs; };
 
 self: super: {
 
@@ -16,7 +16,7 @@ self: super: {
   directory = null;
   filepath = null;
   ghc-prim = null;
-  haskeline = self.haskeline_0_7_1_3;   # GHC's version is broken: https://github.com/NixOS/nixpkgs/issues/5616.
+  haskeline = null;
   haskell2010 = null;
   haskell98 = null;
   hoopl = null;
@@ -28,7 +28,7 @@ self: super: {
   process = null;
   rts = null;
   template-haskell = null;
-  terminfo = self.terminfo_0_4_0_0;     # GHC's version is broken: https://github.com/NixOS/nixpkgs/issues/5616.
+  terminfo = null;
   time = null;
   transformers = null;
   unix = null;
@@ -36,40 +36,67 @@ self: super: {
 
   # mtl 2.2.x needs the latest transformers.
   mtl_2_2_1 = super.mtl_2_2_1.override { transformers = self.transformers_0_4_2_0; };
+
+  # Idris requires mtl 2.2.x.
+  idris = overrideCabal (super.idris.overrideScope (self: super: {
+    mkDerivation = drv: super.mkDerivation (drv // { doCheck = false; });
+    transformers = super.transformers_0_4_2_0;
+    transformers-compat = disableCabalFlag super.transformers-compat "three";
+    haskeline = self.haskeline_0_7_1_3;
+    mtl = super.mtl_2_2_1;
+  })) (drv: {
+    jailbreak = true;           # idris is scared of lens 4.7
+    patchPhase = "find . -name '*.hs' -exec sed -i -s 's|-Werror||' {} +";
+  });                           # warning: "Module ‘Control.Monad.Error’ is deprecated"
+
+  # Depends on time == 0.1.5, which we don't have.
+  HStringTemplate_0_8 = dontDistribute super.HStringTemplate_0_8;
+
+  # This is part of bytestring in our compiler.
+  bytestring-builder = dontHaddock super.bytestring-builder;
+
 }
 
-//                              # packages related to ghcjs
-
-{
-  ghcjs-prim = self.mkDerivation {
-    pname = "ghcjs-prim";
-    version = "0.1.0.0";
-    src = pkgs.fetchgit {
-      url = git://github.com/ghcjs/ghcjs-prim.git;
-      rev = "8e003e1a1df10233bc3f03d7bbd7d37de13d2a84";
-      sha256 = "11k2r87s58wmpxykn61lihn4vm3x67cm1dygvdl26papifinj6pz";
-    };
-    buildDepends = with self; [ primitive ];
-    license = "unknown";
-  };
-
-  ghcjs = self.callPackage ../compilers/ghcjs { Cabal = self.Cabal_1_22_0_0; };
-}
-
-//                              # packages related to amazonka
+// # packages relating to amazonka
 
 (let
-  amazonkaEnv = self: super: {
-    mkDerivation = drv: super.mkDerivation (drv // { doCheck = false; });
+  amazonkaEnv = let self_ = self; in self: super: {
+    mkDerivation = drv: super.mkDerivation (drv // {
+      doCheck = false;
+      hyperlinkSource = false;
+      extraLibraries = (drv.extraLibraries or []) ++ [ (
+        if pkgs.stdenv.lib.elem drv.pname [
+          "Cabal"
+          "time"
+          "unix"
+          "directory"
+          "process"
+          "jailbreak-cabal"
+        ] then null else self.Cabal_1_18_1_6
+      ) ];
+    });
     mtl = self.mtl_2_2_1;
-    nats = self.nats_0_2;
     transformers = self.transformers_0_4_2_0;
-    transformers-compat = overrideCabal super.transformers-compat (drv: { configureFlags = []; });
+    transformers-compat = disableCabalFlag super.transformers-compat "three";
+    hscolour = super.hscolour;
+    time = self.time_1_5_0_1;
+    unix = self.unix_2_7_1_0;
+    directory = self.directory_1_2_1_0;
+    process = overrideCabal self.process_1_2_1_0 (drv: { coreSetup = true; });
+    inherit amazonka-core amazonkaEnv amazonka amazonka-cloudwatch;
   };
-in
-{
-  # These packages need mtl 2.2.x to compile.
-  amazonka-core = super.amazonka-core.overrideScope amazonkaEnv;
-  amazonka = super.amazonka.overrideScope amazonkaEnv;
-  amazonka-cloudwatch = super.amazonka-cloudwatch.overrideScope amazonkaEnv;
+  Cabal = self.Cabal_1_18_1_6.overrideScope amazonkaEnv;
+  amazonka-core =
+    overrideCabal (super.amazonka-core.overrideScope amazonkaEnv) (drv: {
+      # https://github.com/brendanhay/amazonka/pull/57
+      prePatch = "sed -i 's|nats >= 0.1.3 && < 1|nats|' amazonka-core.cabal";
+      extraLibraries = (drv.extraLibraries or []) ++ [ Cabal ];
+    });
+  useEnvCabal = p: overrideCabal (p.overrideScope amazonkaEnv) (drv: {
+    buildDepends = (drv.buildDepends or []) ++ [ Cabal ];
+  });
+  amazonka = useEnvCabal super.amazonka;
+  amazonka-cloudwatch = useEnvCabal super.amazonka-cloudwatch;
+in {
+  inherit amazonka-core amazonkaEnv amazonka amazonka-cloudwatch;
 })
