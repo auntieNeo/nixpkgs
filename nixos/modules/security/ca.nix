@@ -13,8 +13,10 @@ with lib;
       ];
 
     environment.sessionVariables =
-      { OPENSSL_X509_CERT_FILE = "/etc/ssl/certs/ca-bundle.crt";
-        CURL_CA_BUNDLE         = "/etc/ssl/certs/ca-bundle.crt";
+      { SSL_CERT_FILE          = "/etc/ssl/certs/ca-bundle.crt";
+        # FIXME: unneeded - remove eventually.
+        OPENSSL_X509_CERT_FILE = "/etc/ssl/certs/ca-bundle.crt";
+        # FIXME: unneeded - remove eventually.
         GIT_SSL_CAINFO         = "/etc/ssl/certs/ca-bundle.crt";
       };
 

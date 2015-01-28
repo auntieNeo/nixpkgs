@@ -9,12 +9,12 @@
 assert enableDebugClient -> pygobject != null && pyGtkGlade != null;
 
 buildPythonPackage (rec {
-  name = "buildbot-0.8.8";
+  name = "buildbot-0.8.10";
   namePrefix = "";
 
   src = fetchurl {
-    url = "http://buildbot.googlecode.com/files/${name}.tar.gz";
-    sha256 = "1l1rsy82zv8582wypw00ac0k0wsr82ky74f3np4clbrxv3ry64sh";
+    url = "https://pypi.python.org/packages/source/b/buildbot/${name}.tar.gz";
+    sha256 = "1x5513mjvd3mwwadawk6v3ca2wh5mcmgnn5h9jhq1jw1plp4v5n4";
   };
 
   patchPhase =
@@ -52,7 +52,7 @@ buildPythonPackage (rec {
   meta = with stdenv.lib; {
     homepage = http://buildbot.net/;
 
-    license = "GPLv2+";
+    license = stdenv.lib.licenses.gpl2Plus;
 
     # Of course, we don't really need that on NixOS.  :-)
     description = "Continuous integration system that automates the build/test cycle";

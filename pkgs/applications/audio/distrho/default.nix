@@ -1,16 +1,16 @@
-{ stdenv, fetchgit, alsaLib, fftwSinglePrec, freetype, jackaudio
+{ stdenv, fetchgit, alsaLib, fftwSinglePrec, freetype, jack2
 , libxslt, lv2, pkgconfig, premake3, xlibs }:
 
 let
-  rev = "99efbf0b";
+  rev = "3bfddf7f";
 in
 stdenv.mkDerivation rec {
   name = "distrho-${rev}";
 
   src = fetchgit {
-    url = "https://github.com/falkTX/DISTRHO.git";
+    url = "https://github.com/DISTRHO/DISTRHO-Ports.git";
     inherit rev;
-    sha256 = "ed26a6edca19ebb8260b3dc042f69c32162e1d91179fb9d22da42ec7131936f9";
+    sha256 = "55dc52921bb757c3213da5ef6cab40909f39be3e3b41ba4c6cd66ad90bfb2e6c";
   };
 
   patchPhase = ''
@@ -18,7 +18,7 @@ stdenv.mkDerivation rec {
   '';
 
   buildInputs = [
-    alsaLib fftwSinglePrec freetype jackaudio pkgconfig premake3
+    alsaLib fftwSinglePrec freetype jack2 pkgconfig premake3
     xlibs.libX11 xlibs.libXcomposite xlibs.libXcursor xlibs.libXext
     xlibs.libXinerama xlibs.libXrender
   ];
@@ -50,5 +50,9 @@ stdenv.mkDerivation rec {
     '';
     maintainers = [ maintainers.goibhniu ];
     platforms = platforms.linux;
+
+    # The old repo was removed and split into multiple repos. More
+    # work is required to get everything to build and work.
+    broken = true;
   };
 }

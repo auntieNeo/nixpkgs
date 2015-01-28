@@ -63,11 +63,12 @@ in
 
           # Register the paths in the Nix database.
           printRegistration=1 perl ${pkgs.pathsFromGraph} /tmp/xchg/closure | \
-              chroot /mnt ${config.nix.package}/bin/nix-store --load-db
+              chroot /mnt ${config.nix.package}/bin/nix-store --load-db --option build-users-group ""
 
           # Create the system profile to allow nixos-rebuild to work.
           chroot /mnt ${config.nix.package}/bin/nix-env \
-              -p /nix/var/nix/profiles/system --set ${config.system.build.toplevel}
+              -p /nix/var/nix/profiles/system --set ${config.system.build.toplevel} \
+              --option build-users-group ""
 
           # `nixos-rebuild' requires an /etc/NIXOS.
           mkdir -p /mnt/etc
@@ -119,21 +120,27 @@ in
     169.254.169.254 metadata.google.internal metadata
   '';
 
-  systemd.services.fetch-root-authorized-keys =
-    { description = "Fetch authorized_keys for root user";
+  services.ntp.servers = [ "metadata.google.internal" ];
 
-      wantedBy = [ "multi-user.target" ];
+  networking.usePredictableInterfaceNames = false;
+
+  systemd.services.fetch-ssh-keys =
+    { description = "Fetch host keys and authorized_keys for root user";
+
+      wantedBy = [ "sshd.service" ];
       before = [ "sshd.service" ];
-      after = [ "network.target" ];
+      after = [ "network-online.target" ];
+      wants = [ "network-online.target" ];
 
-      path  = [ pkgs.curl ];
-      script =
+      script = let wget = "${pkgs.wget}/bin/wget --retry-connrefused -t 6 --waitretry=10"; in
         ''
+          # When dealing with cryptographic keys, we want to keep things private.
+          umask 077
           # Don't download the SSH key if it has already been downloaded
           if ! [ -e /root/.ssh/authorized_keys ]; then
                 echo "obtaining SSH key..."
-                mkdir -p /root/.ssh
-                curl -o /root/authorized-keys-metadata http://metadata/0.1/meta-data/authorized-keys
+                mkdir -m 0700 -p /root/.ssh
+                ${wget} -O /root/authorized-keys-metadata http://metadata/0.1/meta-data/authorized-keys
                 if [ $? -eq 0 -a -e /root/authorized-keys-metadata ]; then
                     cat /root/authorized-keys-metadata | cut -d: -f2- > /root/key.pub
                     if ! grep -q -f /root/key.pub /root/.ssh/authorized_keys; then
@@ -141,13 +148,35 @@ in
                         echo "new key added to authorized_keys"
                     fi
                     chmod 600 /root/.ssh/authorized_keys
-                    rm -f /root/key.pub /root/authorized-keys-metadata
                 fi
+                rm -f /root/key.pub /root/authorized-keys-metadata
+          fi
+
+          countKeys=0
+          ${flip concatMapStrings config.services.openssh.hostKeys (k :
+            let kName = baseNameOf k.path; in ''
+              echo "trying to obtain SSH private host key ${kName}"
+              ${wget} -O /root/${kName} http://metadata/0.1/meta-data/attributes/${kName} && :
+              if [ $? -eq 0 -a -e /root/${kName} ]; then
+                  countKeys=$((countKeys+1))
+                  mv -f /root/${kName} ${k.path}
+                  echo "downloaded ${k.path}"
+                  chmod 600 ${k.path}
+                  ${config.programs.ssh.package}/bin/ssh-keygen -y -f ${k.path} > ${k.path}.pub
+                  chmod 644 ${k.path}.pub
+              fi
+              rm -f /root/${kName}
+            ''
+          )}
+
+          if [[ $countKeys -le 0 ]]; then
+             echo "failed to obtain any SSH private host keys."
+             false
           fi
         '';
       serviceConfig.Type = "oneshot";
       serviceConfig.RemainAfterExit = true;
+      serviceConfig.StandardError = "journal+console";
+      serviceConfig.StandardOutput = "journal+console";
      };
-
-
 }

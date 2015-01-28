@@ -2,11 +2,12 @@
 , libtool, gobjectIntrospection, polkit, systemd, coreutils }:
 
 stdenv.mkDerivation rec {
-  name = "accountsservice-0.6.35";
+  name = "accountsservice-${version}";
+  version = "0.6.40";
   
   src = fetchurl {
-    url = http://www.freedesktop.org/software/accountsservice/accountsservice-0.6.35.tar.xz;
-    sha256 = "0f1hzl6hw56xvwgmd4yvmdyj15xj1fafw45pzv3qarww7h0wg8b5";
+    url = "http://www.freedesktop.org/software/accountsservice/accountsservice-${version}.tar.xz";
+    sha256 = "0ayb3y3l25dmwxlh9g071h02mphjfbkvi2k5f635bayb01k7akzh";
   };
 
   buildInputs = [ pkgconfig glib intltool libtool makeWrapper
@@ -24,7 +25,10 @@ stdenv.mkDerivation rec {
       --run "${coreutils}/bin/mkdir -p /var/lib/AccountsService/icons"
   '';
 
-  meta = {
+  meta = with stdenv.lib; {
     description = "D-Bus interface for user account query and manipulation";
+    homepage = http://www.freedesktop.org/wiki/Software/AccountsService;
+    license = licenses.gpl3;
+    maintainers = with maintainers; [ pSub ];
   };
 }

@@ -1,21 +1,21 @@
 { stdenv, fetchurl, alsaLib, boost, cairo, cmake, fftwSinglePrec, fltk
-, jackaudio, libsndfile, mesa, minixml, pkgconfig, zlib
+, jack2, libsndfile, lv2, mesa, minixml, pkgconfig, zlib, xorg
 }:
 
 assert stdenv ? glibc;
 
 stdenv.mkDerivation  rec {
   name = "yoshimi-${version}";
-  version = "1.2.0";
+  version = "1.3.1";
 
   src = fetchurl {
     url = "mirror://sourceforge/yoshimi/${name}.tar.bz2";
-    sha256 = "0p4v39kxxzzfvaazzxarx54i164ghpfxq0ljkavlgr8fnix5v3mx";
+    sha256 = "1nj71xmjgr0pdqwv6h9kigdvljh8hggy6az9rnd7f64r13nmrphl";
   };
 
   buildInputs = [
-    alsaLib boost cairo fftwSinglePrec fltk jackaudio libsndfile mesa
-    minixml zlib
+    alsaLib boost cairo fftwSinglePrec fltk jack2 libsndfile lv2 mesa
+    minixml zlib xorg.libpthreadstubs
   ];
 
   nativeBuildInputs = [ cmake pkgconfig ];

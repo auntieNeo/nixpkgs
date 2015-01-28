@@ -1,4 +1,4 @@
-{ stdenv, lib, go, fetchFromGitHub }:
+{ stdenv, lib, go_1_3, fetchFromGitHub }:
 
 let
   goDeps = [
@@ -37,10 +37,10 @@ stdenv.mkDerivation rec {
 
   src = sources;
 
-  propagatedBuildInputs = [ go ];
+  propagatedBuildInputs = [ go_1_3 ];
 
   installPhase = ''
-    ensureDir $out/bin
+    mkdir -p $out/bin
     export GOPATH=$src
     go build -v -o $out/bin/gox github.com/mitchellh/gox
   '';

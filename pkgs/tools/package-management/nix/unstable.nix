@@ -5,11 +5,11 @@
 }:
 
 stdenv.mkDerivation rec {
-  name = "nix-1.8pre3636_9d0709e";
+  name = "nix-1.9pre4021_f46e329";
 
   src = fetchurl {
-    url = "http://hydra.nixos.org/build/11854244/download/5/${name}.tar.xz";
-    sha256 = "13h32d4nbkhvxhj9nyamxf6mfsi7mzvjz1bhyy63088vx468nhmm";
+    url = "http://hydra.nixos.org/build/18964230/download/4/${name}.tar.xz";
+    sha256 = "1a8njx3m8lv7w8ciag5wbl6q16k3gpf9kvv1yr9m4alc6kzm44b2";
   };
 
   nativeBuildInputs = [ perl pkgconfig ];
@@ -24,6 +24,7 @@ stdenv.mkDerivation rec {
   postUnpack =
     '' export CPATH="${bzip2}/include"
        export LIBRARY_PATH="${bzip2}/lib"
+       export CXXFLAGS="-Wno-error=reserved-user-defined-literal"
     '';
 
   configureFlags =
@@ -34,7 +35,6 @@ stdenv.mkDerivation rec {
       --with-www-curl=${perlPackages.WWWCurl}/${perl.libPrefix}
       --disable-init-state
       --enable-gc
-      CFLAGS=-O3 CXXFLAGS=-O3
     '';
 
   makeFlags = "profiledir=$(out)/etc/profile.d";
@@ -57,7 +57,6 @@ stdenv.mkDerivation rec {
         --with-www-curl=${perlPackages.WWWCurl}/${perl.libPrefix}
         --disable-init-state
         --enable-gc
-        CFLAGS=-O3 CXXFLAGS=-O3
       '' + stdenv.lib.optionalString (
           stdenv.cross ? nix && stdenv.cross.nix ? system
       ) ''--with-system=${stdenv.cross.nix.system}'';
@@ -70,7 +69,7 @@ stdenv.mkDerivation rec {
   meta = {
     description = "The Nix Deployment System";
     homepage = http://nixos.org/;
-    license = "LGPLv2+";
+    license = stdenv.lib.licenses.lgpl2Plus;
     maintainers = [ stdenv.lib.maintainers.eelco ];
     platforms = stdenv.lib.platforms.all;
   };

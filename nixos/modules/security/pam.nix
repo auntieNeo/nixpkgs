@@ -54,6 +54,15 @@ let
         '';
       };
 
+      fprintAuth = mkOption {
+        default = config.services.fprintd.enable;
+        type = types.bool;
+        description = ''
+          If set, fingerprint reader will be used (if exists and
+          your fingerprints are enrolled).
+        '';
+      };
+
       sshAgentAuth = mkOption {
         default = false;
         type = types.bool;
@@ -113,6 +122,14 @@ let
         '';
       };
 
+      requireWheel = mkOption {
+        default = false;
+        type = types.bool;
+        description = ''
+          Whether to permit root access only to members of group wheel.
+        '';
+      };
+
       limits = mkOption {
         description = ''
           Attribute set describing resource limits.  Defaults to the
@@ -126,10 +143,26 @@ let
         description = "Whether to show the message of the day.";
       };
 
+      makeHomeDir = mkOption {
+        default = false;
+        type = types.bool;
+        description = ''
+          Whether to try to create home directories for users
+          with <literal>$HOME</literal>s pointing to nonexistent
+          locations on session login.
+        '';
+      };
+
       updateWtmp = mkOption {
         default = false;
         type = types.bool;
         description = "Whether to update <filename>/var/log/wtmp</filename>.";
+      };
+
+      logFailures = mkOption {
+        default = false;
+        type = types.bool;
+        description = "Whether to log authentication failures in <filename>/var/log/faillog</filename>.";
       };
 
       text = mkOption {
@@ -159,8 +192,14 @@ let
           # Authentication management.
           ${optionalString cfg.rootOK
               "auth sufficient pam_rootok.so"}
+          ${optionalString cfg.requireWheel
+              "auth required pam_wheel.so use_uid"}
+          ${optionalString cfg.logFailures
+              "auth required pam_tally.so"}
           ${optionalString (config.security.pam.enableSSHAgentAuth && cfg.sshAgentAuth)
               "auth sufficient ${pkgs.pam_ssh_agent_auth}/libexec/pam_ssh_agent_auth.so file=~/.ssh/authorized_keys:~/.ssh/authorized_keys2:/etc/ssh/authorized_keys.d/%u"}
+          ${optionalString cfg.fprintAuth
+              "auth sufficient ${pkgs.fprintd}/lib/security/pam_fprintd.so"}
           ${optionalString cfg.usbAuth
               "auth sufficient ${pkgs.pam_usb}/lib/security/pam_usb.so"}
           ${optionalString cfg.unixAuth
@@ -189,7 +228,11 @@ let
           session required pam_env.so envfile=${config.system.build.pamEnvironment}
           session required pam_unix.so
           ${optionalString cfg.setLoginUid
-              "session required pam_loginuid.so"}
+              "session ${
+                if config.boot.isContainer then "optional" else "required"
+              } pam_loginuid.so"}
+          ${optionalString cfg.makeHomeDir
+              "session required ${pkgs.pam}/lib/security/pam_mkhomedir.so silent skel=/etc/skel umask=0022"}
           ${optionalString cfg.updateWtmp
               "session required ${pkgs.pam}/lib/security/pam_lastlog.so silent"}
           ${optionalString config.users.ldap.enable

@@ -188,7 +188,7 @@ stdenv.mkDerivation ({
     NM_FOR_TARGET = "${stdenv.cross.config}-nm";
     CXX_FOR_TARGET = "${stdenv.cross.config}-g++";
     # If we are making a cross compiler, cross != null
-    NIX_GCC_CROSS = if cross == null then "${stdenv.gccCross}" else "";
+    NIX_CC_CROSS = if cross == null then "${stdenv.ccCross}" else "";
     configureFlags = "
       ${if enableMultilib then "" else "--disable-multilib"}
       ${if enableShared then "" else "--disable-shared"}
@@ -251,7 +251,7 @@ stdenv.mkDerivation ({
 
   meta = {
     homepage = http://gcc.gnu.org/;
-    license = "GPLv3+";  # runtime support libraries are typically LGPLv3+
+    license = stdenv.lib.licenses.gpl3Plus;  # runtime support libraries are typically LGPLv3+
     description = "GNU Compiler Collection, version ${version}";
 
     longDescription = ''
@@ -265,7 +265,6 @@ stdenv.mkDerivation ({
 
     maintainers = [
       # Add your name here!
-      stdenv.lib.maintainers.ludo
       stdenv.lib.maintainers.viric
     ];
 
@@ -302,7 +301,7 @@ stdenv.mkDerivation ({
 
   meta = {
     homepage = "http://ghdl.free.fr/";
-    license = "GPLv2+";
+    license = stdenv.lib.licenses.gpl2Plus;
     description = "Complete VHDL simulator, using the GCC technology (gcc ${version})";
     maintainers = with stdenv.lib.maintainers; [viric];
     platforms = with stdenv.lib.platforms; linux;

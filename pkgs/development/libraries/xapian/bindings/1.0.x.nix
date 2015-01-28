@@ -42,7 +42,6 @@ composableDerivation.composableDerivation {} rec {
            name = "ruby";
            enable = {
              buildInputs = [ ruby ];
-             # export same env vars as in rubyLibs 
              preConfigure = ''
                export RUBY_LIB=$out/${ruby.libPath}
                export RUBY_LIB_ARCH=$RUBY_LIB
@@ -68,7 +67,7 @@ composableDerivation.composableDerivation {} rec {
   meta = { 
     description = "Bindings for the Xapian library";
     homepage = xapian10.meta.homepage;
-    license = "GPLv2+";
+    license = stdenv.lib.licenses.gpl2Plus;
     maintainers = [ stdenv.lib.maintainers.chaoflow ];
   };
 }

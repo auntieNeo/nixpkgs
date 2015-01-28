@@ -1,14 +1,14 @@
 {stdenv, fetchurl, unzip, makeWrapper, python, jdk}:
 
 stdenv.mkDerivation {
-  name = "mobilesdk-3.2.2.v20140305122111";
+  name = "mobilesdk-3.2.3.GA";
   src = if (stdenv.system == "i686-linux" || stdenv.system == "x86_64-linux") then fetchurl {
-    url = http://builds.appcelerator.com.s3.amazonaws.com/mobile/3_2_X/mobilesdk-3.2.2.v20140305122111-linux.zip;
-    sha1 = "12dc1bfe8dd73db0650a235492f5f50c7b816d69";
+    url = http://builds.appcelerator.com/mobile/3.2.3/mobilesdk-3.2.3.GA-linux.zip;
+    sha1 = "303e6d19a0ca099d47f6862c00b261c6d0206cea";
   }
   else if stdenv.system == "x86_64-darwin" then fetchurl {
-    url = http://builds.appcelerator.com.s3.amazonaws.com/mobile/3_2_X/mobilesdk-3.2.2.v20140305122111-osx.zip;
-    sha1 = "9875b59faf0ab92e8996b58476466405ed60f6e2";
+    url = http://builds.appcelerator.com/mobile/3.2.3/mobilesdk-3.2.3.GA-osx.zip;
+    sha1 = "8c358cbd8624ffe3dfbd0283738105157067e0fb";
   }
   else throw "Platform: ${stdenv.system} not supported!";
   
@@ -17,7 +17,7 @@ stdenv.mkDerivation {
   buildCommand = ''
     mkdir -p $out
     cd $out
-    yes y | unzip $src
+    unzip $src
     
     # Fix shebang header for python scripts
     
@@ -28,8 +28,7 @@ stdenv.mkDerivation {
    
     # Rename ugly version number
     cd mobilesdk/*
-    mv 3.2.2.v20140305122111 3.2.2.GA
-    cd 3.2.2.GA
+    cd 3.2.3.GA
     
     # Zip files do not support timestamps lower than 1980. We have to apply a few work-arounds to cope with that
     # Yes, I know it's nasty :-)
@@ -45,11 +44,11 @@ stdenv.mkDerivation {
     
     ${if stdenv.system == "i686-linux" then
       ''
-        patchelf --set-interpreter ${stdenv.gcc.libc}/lib/ld-linux.so.2 titanium_prep.linux32
+        patchelf --set-interpreter ${stdenv.cc.libc}/lib/ld-linux.so.2 titanium_prep.linux32
       ''
       else if stdenv.system == "x86_64-linux" then
       ''
-        patchelf --set-interpreter ${stdenv.gcc.libc}/lib/ld-linux-x86-64.so.2 titanium_prep.linux64
+        patchelf --set-interpreter ${stdenv.cc.libc}/lib/ld-linux-x86-64.so.2 titanium_prep.linux64
       ''
       else ""}
     
@@ -62,7 +61,7 @@ stdenv.mkDerivation {
     import os, sys
     
     os.environ['PYTHONPATH'] = '$(echo ${python.modules.sqlite3}/lib/python*/site-packages)'
-    os.environ['JAVA_HOME'] = '${if stdenv.system == "x86_64-darwin" then jdk else "${jdk}/lib/openjdk"}'
+    os.environ['JAVA_HOME'] = '${jdk.home}'
     
     os.execv('$(pwd)/.builder.py', sys.argv)
     EOF

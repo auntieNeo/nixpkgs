@@ -4,6 +4,17 @@ with lib;
 
 let
 
+  httpd = serverInfo.serverConfig.package;
+
+  version24 = !versionOlder httpd.version "2.4";
+
+  allGranted = if version24 then ''
+    Require all granted
+  '' else ''
+    Order allow,deny
+    Allow from all
+  '';
+
   mediawikiConfig = pkgs.writeText "LocalSettings.php"
     ''
       <?php
@@ -72,11 +83,11 @@ let
 
   # Unpack Mediawiki and put the config file in its root directory.
   mediawikiRoot = pkgs.stdenv.mkDerivation rec {
-    name= "mediawiki-1.20.8";
+    name= "mediawiki-1.23.3";
 
     src = pkgs.fetchurl {
-      url = "http://download.wikimedia.org/mediawiki/1.20/${name}.tar.gz";
-      sha256 = "0yfmh5vnfbgpvicfqh7nh4hwdk4qbc6gfniv02vchkg5al0nn7ag";
+      url = "http://download.wikimedia.org/mediawiki/1.23/${name}.tar.gz";
+      sha256 = "0l6798jwjwk2khfnm84mgc65ij53a8pnv30wdnn15ys4ivia4bpf";
     };
 
     skins = config.skins;
@@ -90,12 +101,13 @@ let
 
     installPhase =
       ''
-        ensureDir $out
+        mkdir -p $out
         cp -r * $out
         cp ${mediawikiConfig} $out/LocalSettings.php
-        sed -i 's|/bin/bash|${pkgs.stdenv.shell}|' \
-          $out/maintenance/fuzz-tester.php \
-          $out/bin/ulimit.sh \
+        sed -i \
+        -e 's|/bin/bash|${pkgs.bash}/bin/bash|g' \
+        -e 's|/usr/bin/timeout|${pkgs.coreutils}/bin/timeout|g' \
+          $out/includes/limit.sh \
           $out/includes/GlobalFunctions.php
       '';
   };
@@ -103,7 +115,7 @@ let
   mediawikiScripts = pkgs.runCommand "mediawiki-${config.id}-scripts"
     { buildInputs = [ pkgs.makeWrapper ]; }
     ''
-      ensureDir $out/bin
+      mkdir -p $out/bin
       for i in changePassword.php createAndPromote.php userOptions.php edit.php nukePage.php update.php; do
         makeWrapper ${php}/bin/php $out/bin/mediawiki-${config.id}-$(basename $i .php) \
           --add-flags ${mediawikiRoot}/maintenance/$i
@@ -120,8 +132,7 @@ in
         Alias ${config.urlPrefix}/images ${config.uploadDir}
 
         <Directory ${config.uploadDir}>
-            Order allow,deny
-            Allow from all
+            ${allGranted}
             Options -Indexes
         </Directory>
       ''}
@@ -130,6 +141,7 @@ in
         RewriteEngine On
         RewriteCond %{DOCUMENT_ROOT}%{REQUEST_URI} !-f
         RewriteCond %{DOCUMENT_ROOT}%{REQUEST_URI} !-d
+        ${concatMapStringsSep "\n" (u: "RewriteCond %{REQUEST_URI} !^${u.urlPath}") serverInfo.vhostConfig.servedDirs}
         RewriteRule ${if config.enableUploads
           then "!^/images"
           else "^.*\$"
@@ -140,8 +152,7 @@ in
       ''}
 
       <Directory ${mediawikiRoot}>
-          Order allow,deny
-          Allow from all
+          ${allGranted}
           DirectoryIndex index.php
       </Directory>
 

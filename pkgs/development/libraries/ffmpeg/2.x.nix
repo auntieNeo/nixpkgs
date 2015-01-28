@@ -5,11 +5,12 @@
 }:
 
 stdenv.mkDerivation rec {
-  name = "ffmpeg-2.2.2";
+  version = "2.5.3";
+  name = "ffmpeg-${version}";
 
   src = fetchurl {
     url = "http://www.ffmpeg.org/releases/${name}.tar.bz2";
-    sha256 = "062jn47sm1ifwswcd3lx47nff62rgcwp84964q0v983issnrfax4";
+    sha256 = "06j1cgw9h9ya5z8gpcf9v9zik3l4xz7sr4wshj06kznzz5z3sf4x";
   };
 
   subtitleSupport = config.ffmpeg.subtitle or true;
@@ -101,5 +102,7 @@ stdenv.mkDerivation rec {
     homepage = http://www.ffmpeg.org/;
     description = "A complete, cross-platform solution to record, convert and stream audio and video";
     license = if (fdkAACSupport || faacSupport) then stdenv.lib.licenses.unfree else stdenv.lib.licenses.gpl2Plus;
+    platforms = stdenv.lib.platforms.linux;
+    maintainers = with stdenv.lib.maintainers; [ fuuzetsu ];
   };
 }

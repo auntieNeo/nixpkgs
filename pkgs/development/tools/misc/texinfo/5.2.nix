@@ -20,8 +20,9 @@ stdenv.mkDerivation rec {
 
   meta = {
     homepage = "http://www.gnu.org/software/texinfo/";
-    description = "GNU Texinfo, the GNU documentation system";
+    description = "The GNU documentation system";
     license = stdenv.lib.licenses.gpl3Plus;
+    platforms = stdenv.lib.platforms.all;
 
     longDescription = ''
       Texinfo is the official documentation format of the GNU project.
@@ -38,5 +39,6 @@ stdenv.mkDerivation rec {
       need revise only that one document.  The Texinfo system is
       well-integrated with GNU Emacs.
     '';
+    branch = "5.2";
   };
 }

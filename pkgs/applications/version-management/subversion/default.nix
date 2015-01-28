@@ -6,24 +6,24 @@
 , javahlBindings ? false
 , saslSupport ? false
 , stdenv, fetchurl, apr, aprutil, zlib, sqlite
-, httpd ? null, expat, swig ? null, jdk ? null, python ? null, perl ? null
+, apacheHttpd ? null, expat, swig ? null, jdk ? null, python ? null, perl ? null
 , sasl ? null, serf ? null
 }:
 
 assert bdbSupport -> aprutil.bdbSupport;
-assert httpServer -> httpd != null;
+assert httpServer -> apacheHttpd != null;
 assert pythonBindings -> swig != null && python != null;
 assert javahlBindings -> jdk != null && perl != null;
 
-stdenv.mkDerivation rec {
+stdenv.mkDerivation (rec {
 
-  version = "1.8.8";
+  version = "1.8.11";
 
   name = "subversion-${version}";
 
   src = fetchurl {
     url = "mirror://apache/subversion/${name}.tar.bz2";
-    sha256 = "1cqxwydjidyf59y4lgkxl7bra1sy28abqm2mi5971qjsv0f96s8m";
+    sha1 = "161edaee328f4fdcfd2a7c10ecd3fbcd51c61275";
   };
 
   buildInputs = [ zlib apr aprutil sqlite ]
@@ -34,20 +34,18 @@ stdenv.mkDerivation rec {
 
   configureFlags = ''
     ${if bdbSupport then "--with-berkeley-db" else "--without-berkeley-db"}
-    ${if httpServer then "--with-apxs=${httpd}/bin/apxs" else "--without-apxs"}
+    ${if httpServer then "--with-apxs=${apacheHttpd}/bin/apxs" else "--without-apxs"}
     ${if pythonBindings || perlBindings then "--with-swig=${swig}" else "--without-swig"}
     ${if javahlBindings then "--enable-javahl --with-jdk=${jdk}" else ""}
     ${if stdenv.isDarwin then "--enable-keychain" else "--disable-keychain"}
-    ${if saslSupport then "--enable-sasl --with-sasl=${sasl}" else "--disable-sasl"}
-    ${if httpSupport then "--enable-serf --with-serf=${serf}" else "--disable-serf"}
+    ${if saslSupport then "--with-sasl=${sasl}" else "--without-sasl"}
+    ${if httpSupport then "--with-serf=${serf}" else "--without-serf"}
     --with-zlib=${zlib}
     --with-sqlite=${sqlite}
   '';
 
   preBuild = ''
     makeFlagsArray=(APACHE_LIBEXECDIR=$out/modules)
-  '' + stdenv.lib.optionalString stdenv.isDarwin ''
-    substituteInPlace configure --replace "-no-cpp-precomp" ""
   '';
 
   postInstall = ''
@@ -79,4 +77,9 @@ stdenv.mkDerivation rec {
     maintainers = with stdenv.lib.maintainers; [ eelco lovek323 ];
     hydraPlatforms = stdenv.lib.platforms.linux ++ stdenv.lib.platforms.darwin;
   };
-}
+} // stdenv.lib.optionalAttrs stdenv.isDarwin {
+  CXX = "clang++";
+  CC = "clang";
+  CPP = "clang -E";
+  CXXCPP = "clang++ -E";
+})

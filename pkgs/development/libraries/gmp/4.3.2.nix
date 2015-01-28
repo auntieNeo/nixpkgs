@@ -28,7 +28,8 @@ stdenv.mkDerivation rec {
   doCheck = false;
 
   meta = {
-    description = "GMP, the GNU multiple precision arithmetic library";
+    branch = "4";
+    description = "GNU multiple precision arithmetic library";
 
     longDescription =
       '' GMP is a free library for arbitrary precision arithmetic, operating
@@ -53,9 +54,9 @@ stdenv.mkDerivation rec {
       '';
 
     homepage = http://gmplib.org/;
-    license = "LGPLv3+";
+    license = stdenv.lib.licenses.lgpl3Plus;
 
-    maintainers = [ stdenv.lib.maintainers.ludo ];
+    maintainers = [ ];
     platforms = stdenv.lib.platforms.all;
   };
 }

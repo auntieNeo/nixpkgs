@@ -7,6 +7,9 @@
 #   * nix-env -p /nix/var/nix/profiles/system -i <nix-expr for the configuration>
 #   * install the boot loader
 
+# Ensure a consistent umask.
+umask 0022
+
 # Re-exec ourselves in a private mount namespace so that our bind
 # mounts get cleaned up automatically.
 if [ "$(id -u)" = 0 ]; then
@@ -27,8 +30,10 @@ while [ "$#" -gt 0 ]; do
     case "$i" in
         -I)
             given_path="$1"; shift 1
-            absolute_path=$(readlink -m $given_path)
-            extraBuildFlags+=("$i" "/mnt$absolute_path")
+            extraBuildFlags+=("$i" "$given_path")
+            ;;
+        --root)
+            mountPoint="$1"; shift 1
             ;;
         --show-trace)
             extraBuildFlags+=("$i")
@@ -72,6 +77,7 @@ mkdir -m 0755 -p $mountPoint/dev $mountPoint/proc $mountPoint/sys $mountPoint/et
 mkdir -m 01777 -p $mountPoint/tmp
 mkdir -m 0755 -p $mountPoint/tmp/root
 mkdir -m 0755 -p $mountPoint/var/setuid-wrappers
+mkdir -m 0700 -p $mountPoint/root
 mount --rbind /dev $mountPoint/dev
 mount --rbind /proc $mountPoint/proc
 mount --rbind /sys $mountPoint/sys
@@ -81,8 +87,14 @@ mount -t tmpfs -o "mode=0755" none $mountPoint/var/setuid-wrappers
 rm -rf $mountPoint/var/run
 ln -s /run $mountPoint/var/run
 rm -f $mountPoint/etc/{resolv.conf,hosts}
-cp -f /etc/resolv.conf /etc/hosts $mountPoint/etc/
+cp -Lf /etc/resolv.conf /etc/hosts $mountPoint/etc/
 
+if [ -e "$SSL_CERT_FILE" ]; then
+    cp -Lf "$SSL_CERT_FILE" "$mountPoint/tmp/ca-cert.crt"
+    export SSL_CERT_FILE=/tmp/ca-cert.crt
+    # For Nix 1.7
+    export CURL_CA_BUNDLE=/tmp/ca-cert.crt
+fi
 
 if [ -n "$runChroot" ]; then
     if ! [ -L $mountPoint/nix/var/nix/profiles/system ]; then
@@ -238,9 +250,9 @@ chroot $mountPoint /nix/var/nix/profiles/system/activate
 
 
 # Ask the user to set a root password.
-if [ -t 0 ] ; then
+if [ "$(chroot $mountPoint nix-instantiate --eval '<nixos>' -A config.users.mutableUsers)" = true ] && [ -t 0 ] ; then
     echo "setting root password..."
-    chroot $mountPoint passwd
+    chroot $mountPoint /var/setuid-wrappers/passwd
 fi
 
 

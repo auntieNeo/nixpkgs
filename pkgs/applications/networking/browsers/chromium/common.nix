@@ -8,12 +8,12 @@
 , libusb1, libexif, pciutils
 
 , python, pythonPackages, perl, pkgconfig
-, nspr, udev, krb5
+, nspr, udev, kerberos
 , utillinux, alsaLib
-, gcc, bison, gperf
+, bison, gperf
 , glib, gtk, dbus_glib
 , libXScrnSaver, libXcursor, libXtst, mesa
-, protobuf, speechd, libXdamage
+, protobuf, speechd, libXdamage, cups
 
 # optional dependencies
 , libgcrypt ? null # gnomeSupport || cupsSupport
@@ -25,8 +25,9 @@
 , gnomeSupport ? false, gnome ? null
 , gnomeKeyringSupport ? false, libgnome_keyring3 ? null
 , proprietaryCodecs ? true
-, cupsSupport ? false
+, cupsSupport ? true
 , pulseSupport ? false, pulseaudio ? null
+, hiDPISupport ? false
 
 , source
 , plugins
@@ -68,7 +69,7 @@ let
     use_system_xdg_utils = true;
     use_system_yasm = true;
     use_system_zlib = false;
-    use_system_protobuf = true;
+    use_system_protobuf = false; # needs newer protobuf
 
     use_system_harfbuzz = false;
     use_system_icu = false; # Doesn't support ICU 52 yet.
@@ -79,7 +80,7 @@ let
   };
 
   opusWithCustomModes = libopus.override {
-    withCustomModes = !versionOlder source.version "35.0.0.0";
+    withCustomModes = true;
   };
 
   defaultDependencies = [
@@ -108,7 +109,7 @@ let
       nspr udev
       (if useOpenSSL then openssl else nss)
       utillinux alsaLib
-      gcc bison gperf krb5
+      bison gperf kerberos
       glib gtk dbus_glib
       libXScrnSaver libXcursor libXtst mesa
       pciutils protobuf speechd libXdamage
@@ -116,7 +117,7 @@ let
     ] ++ optional gnomeKeyringSupport libgnome_keyring3
       ++ optionals gnomeSupport [ gnome.GConf libgcrypt ]
       ++ optional enableSELinux libselinux
-      ++ optional cupsSupport libgcrypt
+      ++ optionals cupsSupport [ libgcrypt cups ]
       ++ optional pulseSupport pulseaudio;
 
     # XXX: Wait for https://crbug.com/239107 and https://crbug.com/239181 to
@@ -132,25 +133,27 @@ let
       find -iname '*.gyp*' \( -type f -o -type l \) \
         -exec sed -i -e 's|<(DEPTH)|'"$(pwd)"'|g' {} + \
         -exec chmod u+w {} +
-    '' + optionalString (!versionOlder source.version "37.0.0.0") ''
-      python third_party/libaddressinput/chromium/tools/update-strings.py
     '';
 
-    postPatch = let
-      toPatch = if versionOlder source.version "36.0.0.0"
-                then "content/browser/browser_main_loop.cc"
-                else "sandbox/linux/suid/client/setuid_sandbox_client.cc";
-    in ''
+    postPatch = ''
       sed -i -e '/base::FilePath exe_dir/,/^ *} *$/c \
         sandbox_binary = base::FilePath(getenv("CHROMIUM_SANDBOX_BINARY_PATH"));
-      ' ${toPatch}
-    '' + optionalString (!versionOlder source.version "36.0.0.0") ''
+      ' sandbox/linux/suid/client/setuid_sandbox_client.cc
+
       sed -i -e '/module_path *=.*libexif.so/ {
         s|= [^;]*|= base::FilePath().AppendASCII("${libexif}/lib/libexif.so")|
       }' chrome/utility/media_galleries/image_metadata_extractor.cc
+
+      sed -i -e '/lib_loader.*Load/s!"\(libudev\.so\)!"${udev}/lib/\1!' \
+        device/udev_linux/udev?_loader.cc
+
+      sed -i -e '/libpci_loader.*Load/s!"\(libpci\.so\)!"${pciutils}/lib/\1!' \
+        gpu/config/gpu_info_collector_linux.cc
     '';
 
     gypFlags = mkGypFlags (gypFlagsUseSystemLibs // {
+      linux_use_bundled_binutils = false;
+      linux_use_bundled_gold = false;
       linux_use_gold_binary = false;
       linux_use_gold_flags = false;
       proprietary_codecs = false;
@@ -165,9 +168,8 @@ let
       use_cups = cupsSupport;
       linux_sandbox_chrome_path="${libExecPath}/${packageName}";
       werror = "";
-
-      # FIXME: In version 37, omnibox.mojom.js doesn't seem to be generated.
-      use_mojo = versionOlder source.version "37.0.0.0";
+      clang = false;
+      enable_hidpi = hiDPISupport;
 
       # Google API keys, see:
       #   http://www.chromium.org/developers/how-tos/api-keys
@@ -190,6 +192,9 @@ let
     } // (extraAttrs.gypFlags or {}));
 
     configurePhase = ''
+      # Precompile .pyc files to prevent race conditions during build
+      python -m compileall -q -f . || : # ignore errors
+
       # This is to ensure expansion of $out.
       libExecPath="${libExecPath}"
       python build/linux/unbundle/replace_gyp_files.py ${gypFlags}
@@ -197,22 +202,12 @@ let
     '';
 
     buildPhase = let
-      CC = "${gcc}/bin/gcc";
-      CXX = "${gcc}/bin/g++";
-      buildCommand = target: let
-        # XXX: Only needed for version 36 and older!
-        targetSuffix = optionalString
-          (versionOlder source.version "37.0.0.0" && target == "mksnapshot")
-          (if stdenv.is64bit then ".x64" else ".ia32");
-      in ''
-        CC="${CC}" CC_host="${CC}"     \
-        CXX="${CXX}" CXX_host="${CXX}" \
-        LINK_host="${CXX}"             \
-          "${ninja}/bin/ninja" -C "${buildPath}"  \
-            -j$NIX_BUILD_CORES -l$NIX_BUILD_CORES \
-            "${target}${targetSuffix}"
+      buildCommand = target: ''
+        "${ninja}/bin/ninja" -C "${buildPath}"  \
+          -j$NIX_BUILD_CORES -l$NIX_BUILD_CORES \
+          "${target}"
       '' + optionalString (target == "mksnapshot" || target == "chrome") ''
-        paxmark m "${buildPath}/${target}${targetSuffix}"
+        paxmark m "${buildPath}/${target}"
       '';
       targets = extraAttrs.buildTargets or [];
       commands = map buildCommand targets;

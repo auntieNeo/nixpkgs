@@ -1,12 +1,14 @@
 { stdenv, fetchurl, zlib, ncurses ? null, perl ? null, pam }:
 
 stdenv.mkDerivation rec {
-  name = "util-linux-2.24.1";
+  name = "util-linux-2.25.2";
 
   src = fetchurl {
-    url = "http://www.kernel.org/pub/linux/utils/util-linux/v2.24/${name}.tar.xz";
-    sha256 = "0444xhfm9525v3aagyfbp38mp7xsw2fn9zg4ya713c7s5hivcpl3";
+    url = "mirror://kernel/linux/utils/util-linux/v2.25/${name}.tar.xz";
+    sha256 = "e0457f715b73f4a349e1acb08cb410bf0edc9a74a3f75c357070f31f70e33cd6";
   };
+
+  patches = [ ./rtcwake-search-PATH-for-shutdown.patch ];
 
   crossAttrs = {
     # Work around use of `AC_RUN_IFELSE'.

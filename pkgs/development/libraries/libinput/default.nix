@@ -1,22 +1,20 @@
-{ stdenv, fetchurl, libevdev, mtdev, pkgconfig, udev }:
+{ stdenv, fetchurl, pkgconfig, mtdev, udev, libevdev }:
 
 stdenv.mkDerivation rec {
-  name = "libinput-${version}";
-  version = "0.7.0";
-  # NOTE: version 0.8.0 isn't used because the removal of the
-  # libinput_event_pointer_get_axis symbol currently breaks libswc (2015-01-27)
+  name = "libinput-0.7.0";
 
   src = fetchurl {
-    url = "http://www.freedesktop.org/software/libinput/libinput-${version}.tar.xz";
-    sha256 = "129f485afe5e4a9394641293991c97cb99f5f3338340d0d65b704ff463d1579e";
+    url = "http://www.freedesktop.org/software/libinput/${name}.tar.xz";
+    sha256 = "17jps5iz8kvhbgbd0h436grzb6fbjwf9k4qjcja96jjyzrd4i7qj";
   };
 
-  buildInputs = [ libevdev mtdev pkgconfig udev ];
+  buildInputs = [ pkgconfig mtdev udev libevdev ];
 
-  meta = {
-    description = "Library to handle input devices in Wayland compositors";
-    homepage = http://www.freedesktop.org/wiki/Software/libinput/;
-    license = stdenv.lib.licenses.mit;
-    platforms = stdenv.lib.platforms.all;
+  meta = with stdenv.lib; {
+    homepage = http://www.freedesktop.org/wiki/Software/libinput;
+    description = "handles input devices in Wayland compositors and to provide a generic X.Org input driver";
+    platforms = platforms.unix;
+    license = licenses.mit;
+    maintainers = with maintainers; [ wkennington ];
   };
 }

@@ -4,6 +4,7 @@
 , gmp ? null, mpfr ? null, bison ? null, flex ? null
 }:
 
+assert false;
 assert stdenv.isDarwin;
 assert langF77 -> gmp != null;
 
@@ -44,4 +45,6 @@ stdenv.mkDerivation rec {
   langC = true;
 
   buildInputs = stdenv.lib.optionals langF77 [ gmp mpfr bison flex ];
+
+  #meta.broken = true;
 }

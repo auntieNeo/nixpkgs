@@ -14,13 +14,13 @@ let
     };
     patches = [
       (fetchurl {
-       url = "http://ftp.de.debian.org/debian/pool/main/m/makedev/makedev_2.3.1-89.diff.gz";
+       url = "mirror://debian/pool/main/m/makedev/makedev_2.3.1-89.diff.gz";
        sha256 = "1zbifw2jkq6471fb67y893nq4lq009xbfbi57jbjwxnhqmrppcy9";
        })
     ];
     # TODO install man
     installPhase = ''
-      ensureDir $out/sbin
+      mkdir -p $out/sbin
       ls -l
       t=$out/sbin/MAKEDEV
       cp MAKEDEV $t
@@ -32,13 +32,13 @@ in
 
 stdenv.mkDerivation {
 
-  name = "debootstrap-1.0.60";
+  name = "debootstrap-1.0.66";
 
   src = fetchurl {
     # git clone git://git.debian.org/d-i/debootstrap.git
     # I'd like to use the source. However it's lacking the lanny script ? (still true?)
-    url = http://ftp.de.debian.org/debian/pool/main/d/debootstrap/debootstrap_1.0.60.tar.xz;
-    sha256 = "0jyxfmx466fsqak00m4n6b04zsdqym81ybah7yx2l081d0518sw8";
+    url = mirror://debian/pool/main/d/debootstrap/debootstrap_1.0.66.tar.gz;
+    sha256 = "15gh6pvk7f0fib8ggz2zx53pg2jzqk4x0s8ihkpqxqdf4rlns91k";
   };
 
   buildInputs = [ dpkg gettext gawk perl ];
@@ -78,7 +78,7 @@ stdenv.mkDerivation {
       functions
 
     d=$out/share/debootstrap
-    ensureDir $out/{share/debootstrap,bin}
+    mkdir -p $out/{share/debootstrap,bin}
 
     ${fakeroot}/bin/fakeroot -- make devices.tar.gz MAKEDEV=${makedev}/sbin/MAKEDEV
 
@@ -94,7 +94,7 @@ stdenv.mkDerivation {
     EOF
     chmod +x $out/bin/debootstrap
 
-    ensureDir $out/man/man8
+    mkdir -p $out/man/man8
     mv debootstrap.8 $out/man/man8
   '';
 
@@ -105,7 +105,7 @@ stdenv.mkDerivation {
   meta = { 
     description = "Tool to create a Debian system in a chroot";
     homepage = http://packages.debian.org/de/lenny/debootstrap; # http://code.erisian.com.au/Wiki/debootstrap
-    license = "GPL-2"; # gentoo says so.. ?
+    license = stdenv.lib.licenses.gpl2; # gentoo says so.. ?
     maintainers = [ stdenv.lib.maintainers.marcweber ];
     platforms = stdenv.lib.platforms.linux;
   };

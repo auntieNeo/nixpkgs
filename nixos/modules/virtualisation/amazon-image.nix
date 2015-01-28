@@ -70,10 +70,10 @@ in
 
             # Register the paths in the Nix database.
             printRegistration=1 perl ${pkgs.pathsFromGraph} /tmp/xchg/closure | \
-                chroot /mnt ${config.nix.package}/bin/nix-store --load-db
+                chroot /mnt ${config.nix.package}/bin/nix-store --load-db --option build-users-group ""
 
             # Create the system profile to allow nixos-rebuild to work.
-            chroot /mnt ${config.nix.package}/bin/nix-env \
+            chroot /mnt ${config.nix.package}/bin/nix-env --option build-users-group "" \
                 -p /nix/var/nix/profiles/system --set ${config.system.build.toplevel}
 
             # `nixos-rebuild' requires an /etc/NIXOS.
@@ -172,7 +172,7 @@ in
     boot.initrd.extraUtilsCommands =
       ''
         # We need swapon in the initrd.
-        cp ${pkgs.utillinux}/sbin/swapon $out/bin
+        cp --remove-destination ${pkgs.utillinux}/sbin/swapon $out/bin
       '';
 
     # Don't put old configurations in the GRUB menu.  The user has no
@@ -191,10 +191,5 @@ in
     environment.systemPackages = [ pkgs.cryptsetup ];
 
     boot.initrd.supportedFilesystems = [ "unionfs-fuse" ];
-
-    # Prevent logging in as root without a password.  This doesn't really matter,
-    # since the only PAM services that allow logging in with a null
-    # password are local ones that are inaccessible on EC2 machines.
-    security.initialRootPassword = mkDefault "!";
   };
 }

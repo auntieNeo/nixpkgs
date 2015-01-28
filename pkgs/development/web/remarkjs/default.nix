@@ -14,11 +14,11 @@ let
 in stdenv.mkDerivation rec {
   name = "remarkjs-${version}";
 
-  version = "0.6.4";
+  version = "0.7.0";
 
   src = fetchurl {
     url = "https://github.com/gnab/remark/archive/v${version}.tar.gz";
-    sha256 = "0sdhpn91b05qdqfqbfrhkfx8rkqrgm9pqg4bgjhxf9prfjhvmlrn";
+    sha256 = "1a2il6aa0g9cnig56ykmq8lr626pbxlsllk6js41h6gcn214rw60";
   };
 
   buildInputs = with nodePackages; [
@@ -58,7 +58,7 @@ in stdenv.mkDerivation rec {
 
   meta = {
     homepage = http://remarkjs.com;
-    description = "A simple, in-browser, markdown-driven slideshow tool.";
+    description = "A simple, in-browser, markdown-driven slideshow tool";
     maintainers = [ stdenv.lib.maintainers.rickynils ];
     platforms = stdenv.lib.platforms.linux;
     license = stdenv.lib.licenses.mit;

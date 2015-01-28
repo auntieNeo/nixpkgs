@@ -35,14 +35,14 @@ stdenv.mkDerivation (rec {
   enableParallelBuilding = true;
 
   crossAttrs = {
-    buildInputs = stdenv.lib.optional (stdenv.gccCross.libc ? libiconv)
-      stdenv.gccCross.libc.libiconv.crossDrv;
+    buildInputs = stdenv.lib.optional (stdenv ? ccCross && stdenv.ccCross.libc ? libiconv)
+      stdenv.ccCross.libc.libiconv.crossDrv;
     # Gettext fails to guess the cross compiler
     configureFlags = "CXX=${stdenv.cross.config}-g++";
   };
 
   meta = {
-    description = "GNU gettext, a well integrated set of translation tools and documentation";
+    description = "Well integrated set of translation tools and documentation";
 
     longDescription = ''
       Usually, programs are written and documented in English, and use
@@ -65,7 +65,7 @@ stdenv.mkDerivation (rec {
 
     homepage = http://www.gnu.org/software/gettext/;
 
-    maintainers = [ stdenv.lib.maintainers.ludo ];
+    maintainers = [ ];
     platforms = stdenv.lib.platforms.all;
   };
 }

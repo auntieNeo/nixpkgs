@@ -1,40 +1,39 @@
-{stdenv, fetchurl}:
+{stdenv, fetchurl, unzip }:
 
 stdenv.mkDerivation rec {
-  name = "symbola-7.12";
+  name = "symbola-7.18";
 
-  ttf = fetchurl {
-    url = "http://users.teilar.gr/~g1951d/Symbola.ttf";
-    sha256 = "7acc058bd4e56cc986b2a46420520f59be402c3565c202b5dcebca7f3bfd8b5a";
+  src = fetchurl {
+    url = "http://users.teilar.gr/~g1951d/Symbola.zip";
+    sha256 = "1dk0qawlgdfh58pz2wb80rs9h8m20nmnr4bhk6jmva8201ixz62f";
   };
   docs_pdf = fetchurl {
     url = "http://users.teilar.gr/~g1951d/Symbola.pdf";
-    sha256 = "11bb082ba5c2780a6f94a9bcddf4f314a54e2650bb63ce3081d1dc867c5e6843";
+    sha256 = "16f37fsi2zyy3ka409g3m5d9c09l0ba3rqkz912j90p4588dvk85";
   };
-  docs_docx = fetchurl {
-    url = "http://users.teilar.gr/~g1951d/Symbola.docx";
-    sha256 = "4f0ab494e1e5a7aac147aa7bb8b8bdba7278aee2da942a35f995feb9051515b9";
-  };
+
+  buildInputs = [ unzip ];
 
   phases = [ "installPhase" ];
 
   installPhase = ''
+    unzip ${src}
     mkdir -p $out/share/fonts/truetype
-    cp -v "$ttf" $out/share/fonts/truetype/"${ttf.name}"
+    cp -v Symbola.ttf $out/share/fonts/truetype/
+    cp -v Symbola_hint.ttf $out/share/fonts/truetype/
 
     mkdir -p "$out/doc/${name}"
+    cp -v Symbola.docx "$out/doc/${name}/"
+    cp -v Symbola.htm "$out/doc/${name}/"
     cp -v "$docs_pdf" "$out/doc/${name}/${docs_pdf.name}"
-    cp -v "$docs_docx" "$out/doc/${name}/${docs_docx.name}"
   '';
 
   meta = {
-    description = "Basic Latin, Greek, Cyrillic and many Symbol blocks of Unicode...";
-
+    description = "Basic Latin, Greek, Cyrillic and many Symbol blocks of Unicode";
     # In lieu of a licence:
     # Fonts in this site are offered free for any use;
     # they may be installed, embedded, opened, edited, modified, regenerated, posted, packaged and redistributed.
-    license = "Unicode Fonts for Ancient Scripts";
-
+    license = stdenv.lib.licenses.free;
     homepage = http://users.teilar.gr/~g1951d/;
   };
 }

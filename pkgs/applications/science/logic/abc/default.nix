@@ -6,11 +6,14 @@ stdenv.mkDerivation rec {
 
   src = fetchhg {
     url    = "https://bitbucket.org/alanmi/abc";
-    tag    = "03e221443d71e49e56cbc37f1907ee3b0ff3e7c9";
+    rev    = "03e221443d71e49e56cbc37f1907ee3b0ff3e7c9";
     sha256 = "0ahrqg718y7xpv939f6x8w1kqh7wsja4pw8hca7j67j0qjdgb4lm";
   };
 
   buildInputs = [ readline ];
+  preBuild = ''
+    export buildFlags="CC=$CC CXX=$CXX LD=$LD"
+  '';
   enableParallelBuilding = true;
   installPhase = ''
     mkdir -p $out/bin

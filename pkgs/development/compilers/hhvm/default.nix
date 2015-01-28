@@ -1,25 +1,31 @@
-{ stdenv, fetchgit, cmake, boost, libunwind, mariadb, libmemcached, pcre
+{ stdenv, fetchgit, cmake, pkgconfig, boost, libunwind, mariadb, libmemcached, pcre
 , libevent, gd, curl, libxml2, icu, flex, bison, openssl, zlib, php, re2c
 , expat, libcap, oniguruma, libdwarf, libmcrypt, tbb, gperftools, glog
 , bzip2, openldap, readline, libelf, uwimap, binutils, cyrus_sasl, pam, libpng
-, libxslt, ocaml
+, libxslt, ocaml, freetype, gdb
 }:
 
 stdenv.mkDerivation rec {
   name    = "hhvm-${version}";
-  version = "3.1.0";
+  version = "3.3.0";
 
+  # use git version since we need submodules
   src = fetchgit {
     url    = "https://github.com/facebook/hhvm.git";
-    rev    = "71ecbd8fb5e94b2a008387a2b5e9a8df5c6f5c7b";
-    sha256 = "1zv3k3bxahwyna2jgicwxm9lxs11jddpc9v41488rmzvfhdmzzkn";
+    rev    = "e0c98e21167b425dddf1fc9efe78c9f7a36db268";
+    sha256 = "0s32v713xgf4iim1zb9sg08sg1r1fs49czar3jxajsi0dwc0lkj9";
     fetchSubmodules = true;
   };
 
+  patches = [
+    ./3918a2ccceb98230ff517601ad60aa6bee36e2c4.patch
+    ./8207a31c26cc42fee79363a14c4a8f4fcbfffe63.patch
+  ];
+
   buildInputs =
-    [ cmake boost libunwind mariadb libmemcached pcre libevent gd curl
-      libxml2 icu flex bison openssl zlib php expat libcap oniguruma
-      libdwarf libmcrypt tbb gperftools bzip2 openldap readline
+    [ cmake pkgconfig boost libunwind mariadb libmemcached pcre gdb
+      libevent gd curl libxml2 icu flex bison openssl zlib php expat libcap
+      oniguruma libdwarf libmcrypt tbb gperftools bzip2 openldap readline
       libelf uwimap binutils cyrus_sasl pam glog libpng libxslt ocaml
     ];
 
@@ -31,9 +37,14 @@ stdenv.mkDerivation rec {
   MYSQL_INCLUDE_DIR="${mariadb}/include/mysql";
   MYSQL_DIR=mariadb;
 
-  patchPhase = ''
+  # work around broken build system
+  NIX_CFLAGS_COMPILE = "-I${freetype}/include/freetype2";
+
+  prePatch = ''
     substituteInPlace hphp/util/generate-buildinfo.sh \
       --replace /bin/bash ${stdenv.shell}
+    substituteInPlace ./configure \
+      --replace "/usr/bin/env bash" ${stdenv.shell}
   '';
   installPhase = ''
     mkdir -p $out/bin $out/lib

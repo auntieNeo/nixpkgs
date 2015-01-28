@@ -1,19 +1,19 @@
-{ stdenv, fetchurl, avahi, boost, fftw, gettext, glib, glibmm, gtk
-, gtkmm, intltool, jackaudio, ladspaH, librdf, libsndfile, lv2 
-, pkgconfig, python }:
+{ stdenv, fetchurl, avahi, boost, eigen, fftw, gettext, glib, glibmm, gtk
+, gtkmm, intltool, jack2, ladspaH, librdf, libsndfile, lilv, lv2
+, pkgconfig, python, serd, sord, sratom }:
 
 stdenv.mkDerivation rec {
   name = "guitarix-${version}";
-  version = "0.28.3";
+  version = "0.32.2";
 
   src = fetchurl {
     url = "mirror://sourceforge/guitarix/guitarix2-${version}.tar.bz2";
-    sha256 = "0ks5avylyicqfj9l1wf4gj62i8m6is2jmp0h11h5l2wbg3xiwxjd";
+    sha256 = "0mh4ma48hc8kq3xw25y1zjcrwgsdb0scd36vzw50a1qmmnh74rgp";
   };
 
   buildInputs = [
-    avahi boost fftw gettext glib glibmm gtk gtkmm intltool jackaudio
-    ladspaH librdf libsndfile lv2 pkgconfig python
+    avahi boost eigen fftw gettext glib glibmm gtk gtkmm intltool
+    jack2 ladspaH librdf libsndfile lilv lv2 pkgconfig python serd sord sratom
   ];
 
   configurePhase = "python waf configure --prefix=$out";

@@ -1,23 +1,35 @@
 { stdenv, fetchurl, automake, pkgconfig
 , cups, zlib, libjpeg, libusb1, pythonPackages, saneBackends, dbus
 , polkit, qtSupport ? true, qt4, pythonDBus, pyqt4, net_snmp
-, withPlugin ? false
+, withPlugin ? false, substituteAll
 }:
 
-stdenv.mkDerivation rec {
-  name = "hplip-3.14.4";
+let
+
+  name = "hplip-3.14.10";
 
   src = fetchurl {
     url = "mirror://sourceforge/hplip/${name}.tar.gz";
-    sha256 = "1j8h44f8igl95wqypj4rk9awcw513hlps980jmcnkx60xghc4l6f";
+    sha256 = "164mm30yb61psk5j4ziybxdd310y09fixgl09hmb59ny261wvcqi";
   };
+
+  hplip_state =
+    substituteAll
+      {
+        src = ./hplip.state;
+        # evaluated this way, version is always up-to-date
+        version = (builtins.parseDrvName name).version;
+      };
 
   plugin = fetchurl {
     url = "http://www.openprinting.org/download/printdriver/auxfiles/HP/plugins/${name}-plugin.run";
-    sha256 = "0k1vpmy7babbm3c5v4dcbhq0jgyr8as722nylfs8zx0dy7kr8874";
+    sha256 = "10cvgy1h84fwh7xpw4x6cbkpisqbn3nbcqrgd9xz5fc6mn0b95dk";
   };
 
-  hplip_state = ./hplip.state;
+in
+
+stdenv.mkDerivation {
+  inherit name src;
 
   prePatch = ''
     # HPLIP hardcodes absolute paths everywhere. Nuke from orbit.
@@ -56,11 +68,9 @@ stdenv.mkDerivation rec {
     ''
     + (stdenv.lib.optionalString withPlugin
     (let hplip_arch =
-          if builtins.currentSystem == "i686-linux"
-            then "x86_32"
-            else if builtins.currentSystem == "x86_64-linux"
-              then "x86_64"
-              else abort "Platform must be i686-linux or x86_64-linux!";
+          if stdenv.system == "i686-linux" then "x86_32"
+          else if stdenv.system == "x86_64-linux" then "x86_64"
+          else abort "Platform must be i686-linux or x86_64-linux!";
     in
     ''
     sh ${plugin} --noexec --keep
@@ -120,8 +130,10 @@ stdenv.mkDerivation rec {
   meta = with stdenv.lib; {
     description = "Print, scan and fax HP drivers for Linux";
     homepage = http://hplipopensource.com/;
-    license = if withPlugin then licenses.unfree else "free"; # MIT/BSD/GPL
+    license = if withPlugin
+      then licenses.unfree
+      else with licenses; [ mit bsd2 gpl2Plus ];
     platforms = platforms.linux;
-    maintainers = with maintainers; [ ttuegel ];
+    maintainers = with maintainers; [ ttuegel jgeerds ];
   };
 }

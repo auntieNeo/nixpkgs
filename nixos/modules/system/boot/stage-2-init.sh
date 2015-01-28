@@ -29,7 +29,9 @@ setPath "@path@"
 # Normally, stage 1 mounts the root filesystem read/writable.
 # However, in some environments, stage 2 is executed directly, and the
 # root is read-only.  So make it writable here.
-mount -n -o remount,rw /
+if [ "$container" != systemd-nspawn ]; then
+    mount -n -o remount,rw none /
+fi
 
 
 # Likewise, stage 1 mounts /proc, /dev and /sys, so if we don't have a
@@ -89,6 +91,7 @@ mkdir -m 01777 -p /tmp
 mkdir -m 0755 -p /var /var/log /var/lib /var/db
 mkdir -m 0755 -p /nix/var
 mkdir -m 0700 -p /root
+chmod 0700 /root
 mkdir -m 0755 -p /bin # for the /bin/sh symlink
 mkdir -m 0755 -p /home
 mkdir -m 0755 -p /etc/nixos
@@ -97,12 +100,6 @@ mkdir -m 0755 -p /etc/nixos
 # Miscellaneous boot time cleanup.
 rm -rf /var/run /var/lock
 rm -f /etc/{group,passwd,shadow}.lock
-
-if test -n "@cleanTmpDir@"; then
-    echo -n "cleaning \`/tmp'..."
-    find /tmp -maxdepth 1 -mindepth 1 -print0 | xargs -0r rm -rf --one-file-system
-    echo " done"
-fi
 
 
 # Also get rid of temporary GC roots.
@@ -145,8 +142,6 @@ fi
 # Use /etc/resolv.conf supplied by systemd-nspawn, if applicable.
 if [ -n "@useHostResolvConf@" -a -e /etc/resolv.conf ]; then
     cat /etc/resolv.conf | resolvconf -m 1000 -a host
-else
-    touch /etc/resolv.conf
 fi
 
 
@@ -186,4 +181,4 @@ echo "starting systemd..."
 PATH=/run/current-system/systemd/lib/systemd \
     MODULE_DIR=/run/booted-system/kernel-modules/lib/modules \
     LOCALE_ARCHIVE=/run/current-system/sw/lib/locale/locale-archive \
-    exec systemd --log-target=journal # --log-level=debug --log-target=console --crash-shell
+    exec systemd

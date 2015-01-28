@@ -1,5 +1,5 @@
 { pkgs
-, kernel ? pkgs.linux_3_10
+, kernel ? pkgs.linux
 , img ? "bzImage"
 , rootModules ?
     [ "virtio_pci" "virtio_blk" "virtio_balloon" "ext4" "unix" "9p" "9pnet_virtio" "rtc_cmos" ]
@@ -36,7 +36,7 @@ rec {
       cp -p ${pkgs.stdenv.glibc}/lib/libm.so.* $out/lib
 
       # Copy BusyBox.
-      cp -pd ${pkgs.busybox}/bin/* ${pkgs.busybox}/sbin/* $out/bin
+      cp -pd ${pkgs.busybox}/bin/* $out/bin
 
       # Run patchelf to make the programs refer to the copied libraries.
       for i in $out/bin/* $out/lib/*; do if ! test -L $i; then nuke-refs $i; fi; done
@@ -52,11 +52,11 @@ rec {
 
   createDeviceNodes = dev:
     ''
-      mknod ${dev}/null    c 1 3
-      mknod ${dev}/zero    c 1 5
-      mknod ${dev}/random  c 1 8
-      mknod ${dev}/urandom c 1 9
-      mknod ${dev}/tty     c 5 0
+      mknod -m 666 ${dev}/null    c 1 3
+      mknod -m 666 ${dev}/zero    c 1 5
+      mknod -m 666 ${dev}/random  c 1 8
+      mknod -m 666 ${dev}/urandom c 1 9
+      mknod -m 666 ${dev}/tty     c 5 0
       mknod ${dev}/rtc     c 254 0
       . /sys/class/block/${hd}/uevent
       mknod ${dev}/${hd} b $MAJOR $MINOR
@@ -118,7 +118,7 @@ rec {
     mount -t 9p store /fs/nix/store -o trans=virtio,version=9p2000.L,msize=262144,cache=loose
 
     mkdir -p /fs/tmp
-    mount -t tmpfs -o "mode=755" none /fs/tmp
+    mount -t tmpfs -o "mode=1777" none /fs/tmp
 
     echo "mounting host's temporary directory..."
     mkdir -p /fs/tmp/xchg
@@ -162,7 +162,7 @@ rec {
 
     # Set the system time from the hardware clock.  Works around an
     # apparent KVM > 1.5.2 bug.
-    ${pkgs.utillinux}/sbin/hwclock -s
+    ${pkgs.utillinux}/bin/hwclock -s
 
     export NIX_STORE=/nix/store
     export NIX_BUILD_TOP=/tmp
@@ -255,7 +255,7 @@ rec {
 
   defaultCreateRootFS = ''
     mkdir /mnt
-    ${e2fsprogs}/sbin/mkfs.ext4 /dev/${hd}
+    ${e2fsprogs}/bin/mkfs.ext4 /dev/${hd}
     ${utillinux}/bin/mount -t ext4 /dev/${hd} /mnt
 
     if test -e /mnt/.debug; then
@@ -306,14 +306,14 @@ rec {
       buildInputs = [ utillinux ];
       buildCommand = ''
         ln -s ${linux}/lib /lib
-        ${module_init_tools}/sbin/modprobe loop
-        ${module_init_tools}/sbin/modprobe ext4
-        ${module_init_tools}/sbin/modprobe hfs
-        ${module_init_tools}/sbin/modprobe hfsplus
-        ${module_init_tools}/sbin/modprobe squashfs
-        ${module_init_tools}/sbin/modprobe iso9660
-        ${module_init_tools}/sbin/modprobe ufs
-        ${module_init_tools}/sbin/modprobe cramfs
+        ${module_init_tools}/bin/modprobe loop
+        ${module_init_tools}/bin/modprobe ext4
+        ${module_init_tools}/bin/modprobe hfs
+        ${module_init_tools}/bin/modprobe hfsplus
+        ${module_init_tools}/bin/modprobe squashfs
+        ${module_init_tools}/bin/modprobe iso9660
+        ${module_init_tools}/bin/modprobe ufs
+        ${module_init_tools}/bin/modprobe cramfs
         mknod /dev/loop0 b 7 0
 
         mkdir -p $out
@@ -332,12 +332,12 @@ rec {
       buildInputs = [ utillinux mtdutils ];
       buildCommand = ''
         ln -s ${linux}/lib /lib
-        ${module_init_tools}/sbin/modprobe mtd
-        ${module_init_tools}/sbin/modprobe mtdram total_size=131072
-        ${module_init_tools}/sbin/modprobe mtdchar
-        ${module_init_tools}/sbin/modprobe mtdblock
-        ${module_init_tools}/sbin/modprobe jffs2
-        ${module_init_tools}/sbin/modprobe zlib
+        ${module_init_tools}/bin/modprobe mtd
+        ${module_init_tools}/bin/modprobe mtdram total_size=131072
+        ${module_init_tools}/bin/modprobe mtdchar
+        ${module_init_tools}/bin/modprobe mtdblock
+        ${module_init_tools}/bin/modprobe jffs2
+        ${module_init_tools}/bin/modprobe zlib
         mknod /dev/mtd0 c 90 0
         mknod /dev/mtdblock0 b 31 0
 
@@ -560,7 +560,7 @@ rec {
       buildCommand = ''
         ${createRootFS}
 
-        PATH=$PATH:${dpkg}/bin:${dpkg}/sbin:${glibc}/sbin:${lzma}/bin
+        PATH=$PATH:${dpkg}/bin:${dpkg}/bin:${glibc}/bin:${lzma}/bin
 
         # Unpack the .debs.  We do this to prevent pre-install scripts
         # (which have lots of circular dependencies) from barfing.
@@ -1097,10 +1097,10 @@ rec {
       name = "centos-6.5-i386";
       fullName = "CentOS 6.5 (i386)";
       packagesList = fetchurl {
-        url = http://mirror.centos.org/centos/6.5/os/i386/repodata/a89f27cc7d3cea431f3bd605a1e9309c32d5d409abc1b51a7b5c71c05f18a0c2-primary.xml.gz;
+        url = http://vault.centos.org/6.5/os/i386/repodata/a89f27cc7d3cea431f3bd605a1e9309c32d5d409abc1b51a7b5c71c05f18a0c2-primary.xml.gz;
         sha256 = "1hm031gw0wawgcdbbhdb17adaclw63ls21fn7cgl7siwgp62g7x8";
       };
-      urlPrefix = http://mirror.centos.org/centos/6.5/os/i386/ ;
+      urlPrefix = http://vault.centos.org/6.5/os/i386;
       archs = ["noarch" "i386"];
       packages = commonCentOSPackages;
     };
@@ -1109,24 +1109,12 @@ rec {
       name = "centos-6.5-x86_64";
       fullName = "CentOS 6.5 (x86_64)";
       packagesList = fetchurl {
-        url = http://mirror.centos.org/centos/6.5/os/x86_64/repodata/3353e378f5cb4bb6c3b3dd2ca266c6d68a1e29c36cf99f76aea3d8e158626024-primary.xml.gz;
+        url = http://vault.centos.org/6.5/os/x86_64/repodata/3353e378f5cb4bb6c3b3dd2ca266c6d68a1e29c36cf99f76aea3d8e158626024-primary.xml.gz;
         sha256 = "0930c9cf3n53mrv9zybcqclix2nnqrka4b6xng1vcjybymwf6lrk";
       };
-      urlPrefix = http://mirror.centos.org/centos/6.5/os/x86_64/ ;
+      urlPrefix = http://vault.centos.org/6.5/os/x86_64/;
       archs = ["noarch" "x86_64"];
       packages = commonCentOSPackages;
-    };
-
-    rhel7x86_64 = {
-      name = "rhel-7rc-x86_64";
-      fullName = "RHEL 7 rc (x86_64)";
-      packagesList = fetchurl {
-        url = http://ftp.redhat.com/redhat/rhel/rc/7/Server/x86_64/os/repodata/81f41fc6206a8477235dc7b5099ffe0867f71802415d66d6c0a213a41cae27c3-primary.xml.gz;
-        sha256 = "1hr7mqfa84x2q3b6cpa108cgfrq8zsghkdf7blipg13a4331zx41";
-      };
-      urlPrefix = http://ftp.redhat.com/redhat/rhel/rc/7/Server/x86_64/os ;
-      archs = ["noarch" "x86_64"];
-      packages = commonRHELPackages;
     };
 
   };
@@ -1511,6 +1499,40 @@ rec {
       packages = commonDebPackages ++ [ "diffutils" "libc-bin" ];
     };
 
+    ubuntu1410i386 = {
+      name = "ubuntu-14.10-utopic-i386";
+      fullName = "Ubuntu 14.10 Utopic (i386)";
+      packagesLists =
+        [ (fetchurl {
+            url = mirror://ubuntu/dists/utopic/main/binary-i386/Packages.bz2;
+            sha256 = "dc33a906ccb5625740251da759393d7daace65013d421c79fdd6c99a6490d989";
+          })
+          (fetchurl {
+            url = mirror://ubuntu/dists/utopic/universe/binary-i386/Packages.bz2;
+            sha256 = "e50553c033d9e478507405e63ce7d43c8060368ea851eca0c93b75b72fd85167";
+          })
+        ];
+      urlPrefix = mirror://ubuntu;
+      packages = commonDebPackages ++ [ "diffutils" "libc-bin" ];
+    };
+
+    ubuntu1410x86_64 = {
+      name = "ubuntu-14.10-utopic-amd64";
+      fullName = "Ubuntu 14.10 Utopic (amd64)";
+      packagesList =
+        [ (fetchurl {
+            url = mirror://ubuntu/dists/utopic/main/binary-amd64/Packages.bz2;
+            sha256 = "9650775abec90a24c26dbb03f91a488180309144338f64f7044f7119d60d7182";
+          })
+          (fetchurl {
+            url = mirror://ubuntu/dists/utopic/universe/binary-amd64/Packages.bz2;
+            sha256 = "2acf0e39e64b4fd6d2b68b55c598fc167d7c3cabae233fc31a1e6b69eb6ecc63";
+          })
+        ];
+      urlPrefix = mirror://ubuntu;
+      packages = commonDebPackages ++ [ "diffutils" "libc-bin" ];
+    };
+
     debian40i386 = {
       name = "debian-4.0r9-etch-i386";
       fullName = "Debian 4.0r9 Etch (i386)";
@@ -1556,22 +1578,22 @@ rec {
     };
 
     debian60i386 = {
-      name = "debian-6.0.9-squeeze-i386";
-      fullName = "Debian 6.0.9 Squeeze (i386)";
+      name = "debian-6.0.10-squeeze-i386";
+      fullName = "Debian 6.0.10 Squeeze (i386)";
       packagesList = fetchurl {
         url = mirror://debian/dists/squeeze/main/binary-i386/Packages.bz2;
-        sha256 = "1fb9afa9b2d007939e066c031fc60f6626b78105ce42fe8cdeab7124a0dbf477";
+        sha256 = "c08899011a7a2b0df4da08f91eef3a80d112a247df988b1c966c9fb64c812392";
       };
       urlPrefix = mirror://debian;
       packages = commonDebianPackages;
     };
 
     debian60x86_64 = {
-      name = "debian-6.0.9-squeeze-amd64";
-      fullName = "Debian 6.0.9 Squeeze (amd64)";
+      name = "debian-6.0.10-squeeze-amd64";
+      fullName = "Debian 6.0.10 Squeeze (amd64)";
       packagesList = fetchurl {
         url = mirror://debian/dists/squeeze/main/binary-amd64/Packages.bz2;
-        sha256 = "cee46e56f35342c17795d1923b6c7e545f626e8d568fd48f91d5e0eb92ea329e";
+        sha256 = "3f2ebd5221b9a4bdf7224acf728a51a987c63d32df1bbc20a97f177d2f184045";
       };
       urlPrefix = mirror://debian;
       packages = commonDebianPackages;
@@ -1582,22 +1604,22 @@ rec {
     debian70x86_64 = debian7x86_64;
 
     debian7i386 = {
-      name = "debian-7.5-wheezy-i386";
-      fullName = "Debian 7.5 Wheezy (i386)";
+      name = "debian-7.8-wheezy-i386";
+      fullName = "Debian 7.8 Wheezy (i386)";
       packagesList = fetchurl {
         url = mirror://debian/dists/wheezy/main/binary-i386/Packages.bz2;
-        sha256 = "c4896c30c9a483354714d50f19d0779b72a218ce4f817f9ec8554f9664137993";
+        sha256 = "d86c28cb4f1aa178e678c253944c674a60991a367349e58a90d9a3e939e4e4bc";
       };
       urlPrefix = mirror://debian;
       packages = commonDebianPackages;
     };
 
     debian7x86_64 = {
-      name = "debian-7.5-wheezy-amd64";
-      fullName = "Debian 7.5 Wheezy (amd64)";
+      name = "debian-7.8-wheezy-amd64";
+      fullName = "Debian 7.8 Wheezy (amd64)";
       packagesList = fetchurl {
         url = mirror://debian/dists/wheezy/main/binary-amd64/Packages.bz2;
-        sha256 = "f3b78aac7d2bdfc3896fdd2087affd0e16bafbf35945106b196483f5fb303d52";
+        sha256 = "c8257d74c9411e2f0b9891a21f5dbf5fb088b46d1df043907a4d390b32da2931";
       };
       urlPrefix = mirror://debian;
       packages = commonDebianPackages;

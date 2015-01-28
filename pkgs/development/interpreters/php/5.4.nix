@@ -9,7 +9,7 @@ in
 
 composableDerivation.composableDerivation {} ( fixed : let inherit (fixed.fixed) version; in {
 
-  version = "5.4.30";
+  version = "5.4.35";
 
   name = "php-${version}";
 
@@ -41,8 +41,12 @@ composableDerivation.composableDerivation {} ( fixed : let inherit (fixed.fixed)
       };
 
       curl = {
-        configureFlags = ["--with-curl=${curl}" "--with-curlwrappers"];
+        configureFlags = ["--with-curl=${curl}"];
         buildInputs = [curl openssl];
+      };
+
+      curlWrappers = {
+        configureFlags = ["--with-curlwrappers"];
       };
 
       zlib = {
@@ -74,6 +78,11 @@ composableDerivation.composableDerivation {} ( fixed : let inherit (fixed.fixed)
 
       postgresql = {
         configureFlags = ["--with-pgsql=${postgresql}"];
+        buildInputs = [ postgresql ];
+      };
+
+      pdo_pgsql = {
+        configureFlags = ["--with-pdo-pgsql=${postgresql}"];
         buildInputs = [ postgresql ];
       };
 
@@ -176,16 +185,14 @@ composableDerivation.composableDerivation {} ( fixed : let inherit (fixed.fixed)
         buildInputs = [freetds];
       };
 
+      zts = {
+        configureFlags = ["--enable-maintainer-zts"];
+      };
+
       /*
          php is build within this derivation in order to add the xdebug lines to the php.ini.
          So both Apache and command line php both use xdebug without having to configure anything.
          Xdebug could be put in its own derivation.
-      * /
-        meta = {
-                description = "debugging support for PHP";
-                homepage = http://xdebug.org;
-                license = "based on the PHP license - as is";
-                };
       */
     };
 
@@ -200,9 +207,11 @@ composableDerivation.composableDerivation {} ( fixed : let inherit (fixed.fixed)
     bcmathSupport = config.php.bcmath or true;
     socketsSupport = config.php.sockets or true;
     curlSupport = config.php.curl or true;
+    curlWrappersSupport = config.php.curlWrappers or false;
     gettextSupport = config.php.gettext or true;
     pcntlSupport = config.php.pcntl or true;
     postgresqlSupport = config.php.postgresql or true;
+    pdo_pgsqlSupport = config.php.pdo_pgsql or true;
     readlineSupport = config.php.readline or true;
     sqliteSupport = config.php.sqlite or true;
     soapSupport = config.php.soap or true;
@@ -219,6 +228,7 @@ composableDerivation.composableDerivation {} ( fixed : let inherit (fixed.fixed)
     ftpSupport = config.php.ftp or true;
     fpmSupport = config.php.fpm or true;
     mssqlSupport = config.php.mssql or (!stdenv.isDarwin);
+    ztsSupport = config.php.zts or false;
   };
 
   configurePhase = ''
@@ -243,13 +253,13 @@ composableDerivation.composableDerivation {} ( fixed : let inherit (fixed.fixed)
 
   src = fetchurl {
     url = "http://www.php.net/distributions/php-${version}.tar.bz2";
-    sha256 = "1rkc977b4k0y6qg5nf8729g5zpica31h1isyds6khmrdwi23df1j";
+    sha256 = "0svlp5alqvm3fxzf2044ygziacy2ks9vbrnimkpqnxqgrmjl5nwc";
   };
 
   meta = {
-    description = "The PHP language runtime engine";
+    description = "An HTML-embedded scripting language";
     homepage = http://www.php.net/;
-    license = "PHP-3";
+    license = stdenv.lib.licenses.php301;
   };
 
   patches = [ ./fix-5.4.patch ];

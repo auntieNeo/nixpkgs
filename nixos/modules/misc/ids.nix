@@ -1,19 +1,19 @@
 # This module defines the global list of uids and gids.  We keep a
 # central list to prevent id collisions.
 
-{ config, pkgs, ... }:
+{ config, pkgs, lib, ... }:
 
 {
   options = {
 
-    ids.uids = pkgs.lib.mkOption {
+    ids.uids = lib.mkOption {
       internal = true;
       description = ''
         The user IDs used in NixOS.
       '';
     };
 
-    ids.gids = pkgs.lib.mkOption {
+    ids.gids = lib.mkOption {
       internal = true;
       description = ''
         The group IDs used in NixOS.
@@ -82,7 +82,7 @@
       statsd = 69;
       transmission = 70;
       postgres = 71;
-      smbguest = 74;
+      smbguest = 74;  # unused
       varnish = 75;
       datadog = 76;
       lighttpd = 77;
@@ -135,6 +135,47 @@
       influxdb = 125;
       nsd = 126;
       gitolite = 127;
+      znc = 128;
+      polipo = 129;
+      mopidy = 130;
+      unifi = 131;
+      gdm = 132;
+      dhcpd = 133;
+      siproxd = 134;
+      mlmmj = 135;
+      neo4j = 136;
+      riemann = 137;
+      riemanndash = 138;
+      radvd = 139;
+      zookeeper = 140;
+      dnsmasq = 141;
+      uhub = 142;
+      yandexdisk = 143;
+      collectd = 144;
+      consul = 145;
+      mailpile = 146;
+      redmine = 147;
+      seeks = 148;
+      prosody = 149;
+      i2pd = 150;
+      dnscrypt-proxy = 151;
+      systemd-network = 152;
+      systemd-resolve = 153;
+      systemd-timesync = 154;
+      liquidsoap = 155;
+      etcd = 156;
+      docker-registry = 157;
+      hbase = 158;
+      opentsdb = 159;
+      scollector = 160;
+      bosun = 161;
+      kubernetes = 162;
+      peerflix = 163;
+      chronos = 164;
+      gitlab = 165;
+      tox-bootstrapd = 166;
+      cadvisor = 167;
+      nylon = 168;
 
       # When adding a uid, make sure it doesn't match an existing gid. And don't use uids above 399!
 
@@ -175,6 +216,7 @@
       privoxy = 32;
       disnix = 33;
       osgi = 34;
+      tor = 35;
       ghostOne = 40;
       git = 41;
       fourstore = 42;
@@ -203,7 +245,7 @@
       postgres = 71;
       vboxusers = 72;
       vboxsf = 73;
-      smbguest = 74;
+      smbguest = 74;  # unused
       varnish = 75;
       datadog = 76;
       lighttpd = 77;
@@ -233,6 +275,7 @@
       jenkins = 109;
       systemd-journal-gateway = 110;
       notbit = 111;
+      btsync = 113;
       monetdb = 115;
       foundationdb = 118;
       newrelic = 119;
@@ -243,8 +286,39 @@
       teamspeak = 124;
       influxdb = 125;
       nsd = 126;
+      firebird = 127;
+      znc = 128;
+      polipo = 129;
+      mopidy = 130;
+      docker = 131;
+      gdm = 132;
+      tss = 133;
+      siproxd = 134;
+      mlmmj = 135;
+      riemann = 137;
+      riemanndash = 138;
+      hbase = 139;
+      opentsdb = 140;
+      uhub = 142;
+      mailpile = 146;
+      redmine = 147;
+      seeks = 148;
+      prosody = 149;
+      i2pd = 150;
+      systemd-network = 152;
+      systemd-resolve = 153;
+      systemd-timesync = 154;
+      liquidsoap = 155;
+      fleet = 159;
+      scollector = 160;
+      bosun = 161;
+      kubernetes = 162;
+      gitlab = 165;
+      nylon = 166;
 
-      # When adding a gid, make sure it doesn't match an existing uid. And don't use gids above 399!
+      # When adding a gid, make sure it doesn't match an existing
+      # uid. Users and groups with the same name should have equal
+      # uids and gids. Also, don't use gids above 399!
 
       users = 100;
       nixbld = 30000;

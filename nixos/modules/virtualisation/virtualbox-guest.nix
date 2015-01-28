@@ -6,19 +6,18 @@ with lib;
 
 let
 
-  cfg = config.services.virtualbox;
+  cfg = config.services.virtualboxGuest;
   kernel = config.boot.kernelPackages;
 
 in
 
-optionalAttrs (pkgs.stdenv.isi686 || pkgs.stdenv.isx86_64) # ugly...
 {
 
   ###### interface
 
   options = {
 
-    services.virtualbox = {
+    services.virtualboxGuest = {
 
       enable = mkOption {
         default = false;
@@ -33,6 +32,10 @@ optionalAttrs (pkgs.stdenv.isi686 || pkgs.stdenv.isx86_64) # ugly...
   ###### implementation
 
   config = mkIf cfg.enable {
+    assertions = [ {
+      assertion = pkgs.stdenv.isi686 || pkgs.stdenv.isx86_64;
+      message = "Virtualbox not currently supported on ${pkgs.stdenv.system}";
+    } ];
 
     environment.systemPackages = [ kernel.virtualboxGuestAdditions ];
 

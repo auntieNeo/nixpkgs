@@ -1,6 +1,6 @@
 { stdenv, fetchurl, cmake
-, withQt4 ? true, qt4
-, withQt5 ? false, qt5
+, withQt4 ? false, qt4
+, withQt5 ? true, qt5
 
 # I'm unable to make KDE work here, crashes at runtime so I simply
 # make Qt4 the default until someone who wants KDE can figure it out.
@@ -39,7 +39,7 @@ assert withOnlineServices -> withTaglib;
 assert withReplaygain -> withTaglib;
 
 let
-  version = "1.3.4";
+  version = "1.5.1";
   pname = "cantata";
   fstat = x: fn: "-DENABLE_" + fn + "=" + (if x then "ON" else "OFF");
   fstats = x: map (fstat x);
@@ -50,8 +50,8 @@ stdenv.mkDerivation rec {
 
   src = fetchurl {
     inherit name;
-    url = "https://drive.google.com/uc?export=download&id=0Bzghs6gQWi60WTYtaXk3c1IzNVU";
-    sha256 = "0ris41v44nwd68f3zis9n9lyyc089dyhlxp37rrzflanrc6glpwq";
+    url = "https://drive.google.com/uc?export=download&id=0Bzghs6gQWi60UktwaTRMTjRIUW8";
+    sha256 = "0y7y3nbiqgh1ghb47n4lfyp163wvazvhavlshb1c18ik03fkn5sp";
   };
 
   buildInputs =
@@ -69,7 +69,7 @@ stdenv.mkDerivation rec {
     ++ stdenv.lib.optional (withTaglib && !withKDE4 && withDevices) udisks2;
 
   unpackPhase = "tar -xvf $src";
-  sourceRoot = "cantata-1.3.4";
+  sourceRoot = "${name}";
 
   # Qt4 is implicit when KDE is switched off.
   cmakeFlags = stdenv.lib.flatten [
@@ -92,8 +92,8 @@ stdenv.mkDerivation rec {
   ];
 
   meta = with stdenv.lib; {
-    homepage = "http://code.google.com/p/cantata/";
-    description = "A graphical client for MPD.";
+    homepage = http://code.google.com/p/cantata/;
+    description = "A graphical client for MPD";
     license = licenses.gpl3;
 
     # Technically Cantata can run on Windows so if someone wants to

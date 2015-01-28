@@ -80,7 +80,7 @@ let
 
   # !!! should be in lib
   writeTextInDir = name: text:
-    pkgs.runCommand name {inherit text;} "ensureDir $out; echo -n \"$text\" > $out/$name";
+    pkgs.runCommand name {inherit text;} "mkdir -p $out; echo -n \"$text\" > $out/$name";
 
 
   enableSSL = any (vhost: vhost.enableSSL) allHosts;
@@ -109,6 +109,11 @@ let
       "mpm_${mainCfg.multiProcessingModule}"
       "authz_core"
       "unixd"
+      "cache" "cache_disk"
+      "slotmem_shm"
+      "socache_shmcb"
+      # For compatibility with old configurations, the new module mod_access_compat is provided.
+      "access_compat"
     ]
     ++ (if mainCfg.multiProcessingModule == "prefork" then [ "cgi" ] else [ "cgid" ])
     ++ optional enableSSL "ssl"
@@ -130,7 +135,7 @@ let
   '';
 
 
-  loggingConf = ''
+  loggingConf = (if mainCfg.logFormat != "none" then ''
     ErrorLog ${mainCfg.logDir}/error_log
 
     LogLevel notice
@@ -141,7 +146,9 @@ let
     LogFormat "%{User-agent}i" agent
 
     CustomLog ${mainCfg.logDir}/access_log ${mainCfg.logFormat}
-  '';
+  '' else ''
+    ErrorLog /dev/null
+  '');
 
 
   browserHacks = ''
@@ -158,9 +165,9 @@ let
 
 
   sslConf = ''
-    SSLSessionCache shm:${mainCfg.stateDir}/ssl_scache(512000)
+    SSLSessionCache ${if version24 then "shmcb" else "shm"}:${mainCfg.stateDir}/ssl_scache(512000)
 
-    SSLMutex posixsem
+    ${if version24 then "Mutex" else "SSLMutex"} posixsem
 
     SSLRandomSeed startup builtin
     SSLRandomSeed connect builtin
@@ -194,7 +201,7 @@ let
     ) null ([ cfg ] ++ subservices);
 
     documentRoot = if maybeDocumentRoot != null then maybeDocumentRoot else
-      pkgs.runCommand "empty" {} "ensureDir $out";
+      pkgs.runCommand "empty" {} "mkdir -p $out";
 
     documentRootConf = ''
       DocumentRoot "${documentRoot}"
@@ -206,16 +213,12 @@ let
       </Directory>
     '';
 
-    robotsTxt = pkgs.writeText "robots.txt" ''
-      ${# If this is a vhost, the include the entries for the main server as well.
-        if isMainServer then ""
-        else concatMapStrings (svc: svc.robotsEntries) mainSubservices}
-      ${concatMapStrings (svc: svc.robotsEntries) subservices}
-    '';
-
-    robotsConf = ''
-      Alias /robots.txt ${robotsTxt}
-    '';
+    robotsTxt =
+      concatStringsSep "\n" (filter (x: x != "") (
+        # If this is a vhost, the include the entries for the main server as well.
+        (if isMainServer then [] else [mainCfg.robotsEntries] ++ map (svc: svc.robotsEntries) mainSubservices)
+        ++ [cfg.robotsEntries]
+        ++ (map (svc: svc.robotsEntries) subservices)));
 
   in ''
     ServerName ${serverInfo.canonicalName}
@@ -243,7 +246,9 @@ let
       CustomLog ${mainCfg.logDir}/access_log-${cfg.hostName} ${cfg.logFormat}
     '' else ""}
 
-    ${robotsConf}
+    ${optionalString (robotsTxt != "") ''
+      Alias /robots.txt ${pkgs.writeText "robots.txt" robotsTxt}
+    ''}
 
     ${if isMainServer || maybeDocumentRoot != null then documentRootConf else ""}
 
@@ -387,7 +392,7 @@ let
   '';
 
 
-  enablePHP = any (svc: svc.enablePHP) allSubservices;
+  enablePHP = mainCfg.enablePHP || any (svc: svc.enablePHP) allSubservices;
 
 
   # Generate the PHP configuration file.  Should probably be factored
@@ -420,8 +425,7 @@ in
 
       package = mkOption {
         type = types.package;
-        default = pkgs.apacheHttpd.override { mpm = mainCfg.multiProcessingModule; };
-        example = "pkgs.apacheHttpd_2_4";
+        default = pkgs.apacheHttpd;
         description = ''
           Overridable attribute of the Apache HTTP Server package to use.
         '';
@@ -531,6 +535,12 @@ in
         '';
       };
 
+      enablePHP = mkOption {
+        type = types.bool;
+        default = false;
+        description = "Whether to enable the PHP module.";
+      };
+
       phpOptions = mkOption {
         type = types.lines;
         default = "";
@@ -587,24 +597,24 @@ in
   ###### implementation
 
   config = mkIf config.services.httpd.enable {
-  
+
     assertions = [ { assertion = mainCfg.enableSSL == true
                                -> mainCfg.sslServerCert != null
                                     && mainCfg.sslServerKey != null;
-                     message = "SSL is enabled for HTTPD, but sslServerCert and/or sslServerKey haven't been specified."; }
+                     message = "SSL is enabled for httpd, but sslServerCert and/or sslServerKey haven't been specified."; }
                  ];
 
-    users.extraUsers = optional (mainCfg.user == "wwwrun")
+    users.extraUsers = optionalAttrs (mainCfg.user == "wwwrun") (singleton
       { name = "wwwrun";
-        group = "wwwrun";
+        group = mainCfg.group;
         description = "Apache httpd user";
         uid = config.ids.uids.wwwrun;
-      };
+      });
 
-    users.extraGroups = optional (mainCfg.group == "wwwrun")
+    users.extraGroups = optionalAttrs (mainCfg.group == "wwwrun") (singleton
       { name = "wwwrun";
         gid = config.ids.gids.wwwrun;
-      };
+      });
 
     environment.systemPackages = [httpd] ++ concatMap (svc: svc.extraPath) allSubservices;
 
@@ -672,6 +682,7 @@ in
         serviceConfig.Type = "forking";
         serviceConfig.PIDFile = "${mainCfg.stateDir}/httpd.pid";
         serviceConfig.Restart = "always";
+        serviceConfig.RestartSec = "5s";
       };
 
   };

@@ -24,7 +24,7 @@ stdenv.mkDerivation rec {
   '';
 
   meta = {
-    description = "GNU GLOBAL source code tag system";
+    description = "Source code tag system";
 
     longDescription = ''
       GNU GLOBAL is a source code tagging system that works the same way
@@ -37,11 +37,11 @@ stdenv.mkDerivation rec {
       operating system like GNU and BSD.
     '';
 
-    license = "GPLv3+";
+    license = stdenv.lib.licenses.gpl3Plus;
 
     homepage = http://www.gnu.org/software/global/;
 
-    maintainers = [ stdenv.lib.maintainers.ludo ];
+    maintainers = [ ];
     platforms = stdenv.lib.platforms.unix;
   };
 }

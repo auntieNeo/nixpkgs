@@ -15,11 +15,11 @@ stdenv.mkDerivation {
   '';
 
   configurePhase = ''
-    qmake librecad.pro PREFIX=$out MUPARSER_DIR=${muparser} BOOST_DIR=${boost}
+    qmake librecad.pro PREFIX=$out MUPARSER_DIR=${muparser} BOOST_DIR=${boost.dev}
   '';
 
   installPhase = ''
-    ensureDir $out/bin $out/share
+    mkdir -p $out/bin $out/share
     cp -R unix/librecad $out/bin
     cp -R unix/resources $out/share/librecad
   '';
@@ -33,7 +33,7 @@ stdenv.mkDerivation {
     description = "A 2D CAD package based upon Qt";
     homepage = http://librecad.org;
     repositories.git = git://github.com/LibreCAD/LibreCAD.git;
-    license = "GPLv2";
+    license = stdenv.lib.licenses.gpl2;
     maintainers = with stdenv.lib.maintainers; [viric];
     platforms = with stdenv.lib.platforms; linux;
   };

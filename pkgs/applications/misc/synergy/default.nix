@@ -1,16 +1,19 @@
-{ stdenv, fetchurl, cmake, x11, libX11, libXi, libXtst, libXrandr, xinput, curl
-, cryptopp ? null, unzip }:
+{ stdenv, fetchFromGitHub, cmake, x11, libX11, libXi, libXtst, libXrandr
+, xinput, curl, cryptopp ? null, unzip }:
 
 assert stdenv.isLinux -> cryptopp != null;
 
 with stdenv.lib;
 
 stdenv.mkDerivation rec {
-  name = "synergy-1.4.17";
+  name = "synergy-${version}";
+  version = "1.6.2";
 
-  src = fetchurl {
-    url = "http://fossfiles.com/synergy/${name}-r2055-Source.tar.gz";
-    sha256 = "1mwaapvq9vsm0rdpq99fyzcw6wbp83rg6cylcqcgjjd21c6y9iwm";
+  src = fetchFromGitHub {
+    owner = "synergy";
+    repo = "synergy";
+    rev = version;
+    sha256 = "0himg6c50x5wz5nc6rgd54rph1w6nin6j9f08pa4spsxn9b5h8ks";
   };
 
   patches = optional stdenv.isLinux ./cryptopp.patch;
@@ -32,7 +35,7 @@ stdenv.mkDerivation rec {
   # http://synergy-foss.org/spit/issues/details/3317/
 
   installPhase = ''
-    ensureDir $out/bin
+    mkdir -p $out/bin
     cp ../bin/synergyc $out/bin
     cp ../bin/synergys $out/bin
     cp ../bin/synergyd $out/bin

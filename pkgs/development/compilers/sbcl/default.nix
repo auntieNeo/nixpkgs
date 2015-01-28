@@ -1,15 +1,18 @@
-{ stdenv, fetchurl, sbclBootstrap, clisp}:
+{ stdenv, fetchurl, sbclBootstrap, clisp, which}:
 
 stdenv.mkDerivation rec {
   name    = "sbcl-${version}";
-  version = "1.2.0";
+  version = "1.2.7";
 
   src = fetchurl {
-    url    = mirror://sourceforge/project/sbcl/sbcl/1.2.0/sbcl-1.2.0-source.tar.bz2;
-    sha256 = "13k20sys1v4lvgis8cnbczww6zs93rw176vz07g4jx06418k53x2";
+    url    = "mirror://sourceforge/project/sbcl/sbcl/${version}/${name}-source.tar.bz2";
+    sha256 = "10sjrh91pak4s6j4ks02xp88s25lh8zsii3x7rkn6p7vr7c9jw5j";
   };
 
-  buildInputs = [ sbclBootstrap ] ++ stdenv.lib.optional stdenv.isLinux clisp;
+  buildInputs = [ which ]
+    ++ (stdenv.lib.optional stdenv.isDarwin sbclBootstrap)
+    ++ (stdenv.lib.optional stdenv.isLinux clisp)
+    ;
 
   patchPhase = ''
     echo '"${version}.nixos"' > version.lisp-expr
@@ -36,6 +39,9 @@ stdenv.mkDerivation rec {
     sed -i src/code/target-load.lisp -e \
       '/date defaulted-source/i(or (and (= 2208988801 (file-write-date defaulted-source-truename)) (= 2208988801 (file-write-date defaulted-fasl-truename)))'
 
+    # Fix software version retrieval
+    sed -e "s@/bin/uname@$(which uname)@g" -i src/code/*-os.lisp
+
     # Fix the tests
     sed -e '/deftest pwent/inil' -i contrib/sb-posix/posix-tests.lisp
     sed -e '/deftest grent/inil' -i contrib/sb-posix/posix-tests.lisp
@@ -44,11 +50,14 @@ stdenv.mkDerivation rec {
 
     sed -e '5,$d' -i contrib/sb-bsd-sockets/tests.lisp
     sed -e '5,$d' -i contrib/sb-simple-streams/*test*.lisp
+
+    # Use whatever `cc` the stdenv provides
+    substituteInPlace src/runtime/Config.x86-64-darwin --replace gcc cc
   '';
 
   preBuild = ''
     export INSTALL_ROOT=$out
-    ensureDir test-home
+    mkdir -p test-home
     export HOME=$PWD/test-home
   '';
 
@@ -70,5 +79,7 @@ stdenv.mkDerivation rec {
     license = stdenv.lib.licenses.bsd3;
     maintainers = [stdenv.lib.maintainers.raskin];
     platforms = stdenv.lib.platforms.all;
+    inherit version;
+    updateWalker = true;
   };
 }

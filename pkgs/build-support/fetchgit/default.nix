@@ -1,5 +1,20 @@
-{stdenv, git, cacert}:
-{url, rev ? "HEAD", md5 ? "", sha256 ? "", leaveDotGit ? false, fetchSubmodules ? true}:
+{stdenv, git, cacert}: let
+  urlToName = url: rev: let
+    base = baseNameOf (stdenv.lib.removeSuffix "/" url);
+
+    matched = builtins.match "(.*).git" base;
+
+    short = builtins.substring 0 7 rev;
+
+    appendShort = if (builtins.match "[a-f0-9]*" rev) != null
+      then "-${short}"
+      else "";
+  in "${if matched == null then base else builtins.head matched}${appendShort}";
+in
+{ url, rev ? "HEAD", md5 ? "", sha256 ? "", leaveDotGit ? false
+, fetchSubmodules ? true
+, name ? urlToName url rev
+}:
 
 /* NOTE:
    fetchgit has one problem: git fetch only works for refs.
@@ -26,7 +41,7 @@
 assert md5 != "" || sha256 != "";
 
 stdenv.mkDerivation {
-  name = "git-export";
+  inherit name;
   builder = ./builder.sh;
   fetcher = ./nix-prefetch-git;
   buildInputs = [git];

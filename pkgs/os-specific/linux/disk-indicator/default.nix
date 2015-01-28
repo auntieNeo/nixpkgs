@@ -18,6 +18,8 @@ stdenv.mkDerivation {
 
   buildPhase = "make -f makefile";
 
+  NIX_CFLAGS_COMPILE = "-Wno-error=cpp";
+
   installPhase = ''
     mkdir -p "$out/bin"
     cp ./disk_indicator "$out/bin/"
@@ -30,7 +32,7 @@ stdenv.mkDerivation {
       Small program for Linux that will turn your Scroll, Caps or Num Lock LED
       or LED on your ThinkPad laptop into a hard disk activity indicator.
     '';
-    license = "GPLv3";
+    license = stdenv.lib.licenses.gpl3;
     platforms = stdenv.lib.platforms.linux;
   };
 }

@@ -7,9 +7,9 @@ let cfg = config.services.xserver.synaptics;
     enabledTapConfig = ''
       Option "MaxTapTime" "180"
       Option "MaxTapMove" "220"
-      Option "TapButton1" "${builtins.elemAt cfg.buttonsMap 0}"
-      Option "TapButton2" "${builtins.elemAt cfg.buttonsMap 1}"
-      Option "TapButton3" "${builtins.elemAt cfg.buttonsMap 2}"
+      Option "TapButton1" "${builtins.elemAt cfg.fingersMap 0}"
+      Option "TapButton2" "${builtins.elemAt cfg.fingersMap 1}"
+      Option "TapButton3" "${builtins.elemAt cfg.fingersMap 2}"
     '';
     disabledTapConfig = ''
       Option "MaxTapTime" "0"
@@ -25,12 +25,14 @@ in {
     services.xserver.synaptics = {
 
       enable = mkOption {
+        type = types.bool;
         default = false;
         example = true;
         description = "Whether to enable touchpad support.";
       };
 
       dev = mkOption {
+        type = types.nullOr types.str;
         default = null;
         example = "/dev/input/event0";
         description =
@@ -41,56 +43,74 @@ in {
       };
 
       accelFactor = mkOption {
+        type = types.nullOr types.string;
         default = "0.001";
         description = "Cursor acceleration (how fast speed increases from minSpeed to maxSpeed).";
       };
 
       minSpeed = mkOption {
+        type = types.nullOr types.string;
         default = "0.6";
         description = "Cursor speed factor for precision finger motion.";
       };
 
       maxSpeed = mkOption {
+        type = types.nullOr types.string;
         default = "1.0";
         description = "Cursor speed factor for highest-speed finger motion.";
       };
 
       twoFingerScroll = mkOption {
+        type = types.bool;
         default = false;
         description = "Whether to enable two-finger drag-scrolling.";
       };
 
       vertEdgeScroll = mkOption {
+        type = types.bool;
         default = ! cfg.twoFingerScroll;
         description = "Whether to enable vertical edge drag-scrolling.";
       };
 
       tapButtons = mkOption {
+        type = types.bool;
         default = true;
         example = false;
         description = "Whether to enable tap buttons.";
       };
 
       buttonsMap = mkOption {
+        type = types.listOf types.int;
         default = [1 2 3];
         example = [1 3 2];
         description = "Remap touchpad buttons.";
         apply = map toString;
       };
 
+      fingersMap = mkOption {
+        type = types.listOf types.int;
+        default = [1 2 3];
+        example = [1 3 2];
+        description = "Remap several-fingers taps.";
+        apply = map toString;
+      };
+
       palmDetect = mkOption {
+        type = types.bool;
         default = false;
         example = true;
         description = "Whether to enable palm detection (hardware support required)";
       };
 
       horizontalScroll = mkOption {
+        type = types.bool;
         default = true;
         example = false;
         description = "Whether to enable horizontal scrolling (on touchpad)";
       };
 
       additionalOptions = mkOption {
+        type = types.str;
         default = "";
         example = ''
           Option "RTCornerButton" "2"
@@ -120,9 +140,9 @@ in {
           MatchIsTouchpad "on"
           ${optionalString (cfg.dev != null) ''MatchDevicePath "${cfg.dev}"''}
           Driver "synaptics"
-          Option "MinSpeed" "${cfg.minSpeed}"
-          Option "MaxSpeed" "${cfg.maxSpeed}"
-          Option "AccelFactor" "${cfg.accelFactor}"
+          ${optionalString (cfg.minSpeed != null) ''Option "MinSpeed" "${cfg.minSpeed}"''}
+          ${optionalString (cfg.maxSpeed != null) ''Option "MaxSpeed" "${cfg.maxSpeed}"''}
+          ${optionalString (cfg.accelFactor != null) ''Option "AccelFactor" "${cfg.accelFactor}"''}
           ${optionalString cfg.tapButtons tapConfig}
           Option "ClickFinger1" "${builtins.elemAt cfg.buttonsMap 0}"
           Option "ClickFinger2" "${builtins.elemAt cfg.buttonsMap 1}"

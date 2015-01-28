@@ -15,7 +15,7 @@
 }:
 
 let
-  src = fetch "llvm" "0fprxrilnlwk9qv7f0kplxc7kd8mp4x781asssv2nfi4r9pbna3x";
+  src = fetch "llvm" "1mzgy7r0dma0npi1qrbr1s5n4nbj1ipxgbiw0q671l4s0r3qs0qp";
 in stdenv.mkDerivation rec {
   name = "llvm-${version}";
 
@@ -27,7 +27,10 @@ in stdenv.mkDerivation rec {
     mv compiler-rt-* $sourceRoot/projects/compiler-rt
   '';
 
-  buildInputs = [ perl groff cmake libxml2 python libffi ] ++ stdenv.lib.optional stdenv.isLinux valgrind;
+  buildInputs =
+    [ perl groff cmake libxml2 libffi ]
+    ++ stdenv.lib.optional (!stdenv.isDarwin) python /*
+    ++ stdenv.lib.optional stdenv.isLinux valgrind */;
 
   propagatedBuildInputs = [ ncurses zlib ];
 
@@ -65,6 +68,5 @@ in stdenv.mkDerivation rec {
     license     = stdenv.lib.licenses.bsd3;
     maintainers = with stdenv.lib.maintainers; [ shlevy lovek323 raskin viric ];
     platforms   = stdenv.lib.platforms.all;
-    broken      = stdenv.isDarwin;
   };
 }

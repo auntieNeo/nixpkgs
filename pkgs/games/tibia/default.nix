@@ -1,13 +1,13 @@
-{stdenv, fetchurl, patchelf, glibc, libX11, mesa}:
+{ stdenv, fetchurl, patchelf, glibc, libX11, mesa }:
 
 with stdenv.lib;
 assert stdenv.isi686;
 stdenv.mkDerivation {
-  name = "tibia-10.41";
+  name = "tibia-10.74";
 
   src = fetchurl {
-    url = http://static.tibia.com/download/tibia1041.tgz;
-    sha256 = "1hmqn9c6qaa79ldcnl4ws9dm6rd3ymy48fw254pl6g601amn7b8v";
+    url = http://static.tibia.com/download/tibia1074.tgz;
+    sha256 = "1q8bg33xial0bkagaf4iwn2sny1hglc1fhdxwjbiwrw0jg9w644x";
   };
 
   shell = stdenv.shell;
@@ -22,10 +22,10 @@ stdenv.mkDerivation {
 
   installPhase = ''
     mkdir -pv $out/res
-    cp -r ./* $out/res
+    cp -r * $out/res
 
     patchelf --set-interpreter ${glibc}/lib/ld-linux.so.2 \
-             --set-rpath ${stdenv.gcc.gcc}/lib:${libX11}/lib:${mesa}/lib \
+             --set-rpath ${stdenv.cc.gcc}/lib:${libX11}/lib:${mesa}/lib \
              "$out/res/Tibia"
 
     # We've patchelf'd the files. The main ‘Tibia’ binary is a bit
@@ -51,7 +51,8 @@ stdenv.mkDerivation {
   meta = {
     description = "Top-down MMORPG set in a fantasy world";
     homepage = "http://tibia.com";
-    license = "unfree";
+    license = stdenv.lib.licenses.unfree;
     platforms = ["i686-linux"];
+    maintainers = with stdenv.lib.maintainers; [ fuuzetsu ];
   };
 }

@@ -33,8 +33,8 @@ stdenv.mkDerivation rec {
   postInstall = ''
     if test "$udevSupport" = "1"; then
       mkdir -p $out/etc/udev/rules.d/
-      ./tools/sane-desc -m udev > $out/etc/udev/rules.d/60-libsane.rules || \
-      cp tools/udev/libsane.rules $out/etc/udev/rules.d/60-libsane.rules
+      ./tools/sane-desc -m udev > $out/etc/udev/rules.d/49-libsane.rules || \
+      cp tools/udev/libsane.rules $out/etc/udev/rules.d/49-libsane.rules
     fi
   '';
 
@@ -50,7 +50,7 @@ stdenv.mkDerivation rec {
   meta = {
     homepage = "http://www.sane-project.org/";
     description = "Scanner Access Now Easy";
-    license = "GPLv2+";
+    license = stdenv.lib.licenses.gpl2Plus;
 
     maintainers = [ stdenv.lib.maintainers.simons ];
     platforms = stdenv.lib.platforms.linux;

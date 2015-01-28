@@ -32,7 +32,7 @@ vmTools.runInLinuxImage (stdenv.mkDerivation (
     postHook = ''
       . ${./functions.sh}
       propagateImageName
-      src=$(findTarballs $src | head -1) # Find a tarball.
+      src=$(findTarball $src)
     '';
 
     installExtraDebsPhase = ''
@@ -60,8 +60,10 @@ vmTools.runInLinuxImage (stdenv.mkDerivation (
         --provides="${concatStringsSep "," debProvides}" \
         ${optionalString (src ? version) "--pkgversion=$(echo ${src.version} | tr _ -)"} \
         ''${debMaintainer:+--maintainer="'$debMaintainer'"} \
+        ''${debName:+--pkgname="'$debName'"} \
         $checkInstallFlags \
-        make install
+        -- \
+        $SHELL -c "''${installCommand:-make install}"
 
       mkdir -p $out/debs
       find . -name "*.deb" -exec cp {} $out/debs \;

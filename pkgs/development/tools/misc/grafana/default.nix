@@ -4,18 +4,18 @@ with stdenv.lib;
 
 stdenv.mkDerivation rec {
   name = "grafana-${version}";
-  version = "1.5.4";
+  version = "1.9.1";
 
   src = fetchurl {
     url = "http://grafanarel.s3.amazonaws.com/${name}.zip";
-    sha256 = "fee7334efba967142955be2fa39ecae7bca0cc9b7a76c301430746be4fc7ec6d";
+    sha256 = "1zyzsbspxrzaf2kk6fysp6c3y025s6nd75rc2p9qq9q95dv8fj23";
   };
 
   buildInputs = [ unzip ];
 
   phases = ["unpackPhase" "installPhase"];
   installPhase = ''
-    ensureDir $out && cp -R * $out
+    mkdir -p $out && cp -R * $out
     ${optionalString (conf!=null) ''cp ${conf} $out/config.js''}
   '';
 

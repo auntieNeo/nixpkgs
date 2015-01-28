@@ -8,15 +8,6 @@
 { # The system (e.g., `i686-linux') for which to build the packages.
   system ? builtins.currentSystem
 
-  # Usually, the system type uniquely determines the stdenv and thus
-  # how to build the packages.  But on some platforms we have
-  # different stdenvs, leading to different ways to build the
-  # packages.  For instance, on Windows we support both Cygwin and
-  # Mingw builds.  In both cases, `system' is `i686-cygwin'.  The
-  # attribute `stdenvType' is used to select the specific kind of
-  # stdenv to use, e.g., `i686-mingw'.
-, stdenvType ? system
-
 , # The standard environment to use.  Only used for bootstrapping.  If
   # null, the default standard environment is used.
   bootStdenv ? null
@@ -94,7 +85,7 @@ let
   # Helper functions that are exported through `pkgs'.
   helperFunctions =
     stdenvAdapters //
-    (import ../build-support/trivial-builders.nix { inherit (pkgs) stdenv; inherit (pkgs.xorg) lndir; });
+    (import ../build-support/trivial-builders.nix { inherit lib; inherit (pkgs) stdenv; inherit (pkgs.xorg) lndir; });
 
   stdenvAdapters =
     import ../stdenv/adapters.nix pkgs;
@@ -137,7 +128,7 @@ let
     self_ = with self; helperFunctions // {
 
   # Make some arguments passed to all-packages.nix available
-  inherit system stdenvType platform;
+  inherit system platform;
 
   # Allow callPackage to fill in the pkgs argument
   inherit pkgs;
@@ -153,15 +144,16 @@ let
 
 
   # Override system. This is useful to build i686 packages on x86_64-linux.
-  forceSystem = system: (import ./all-packages.nix) {
+  forceSystem = system: kernel: (import ./all-packages.nix) {
     inherit system;
+    platform = platform // { kernelArch = kernel; };
     inherit bootStdenv noSysDirs gccWithCC gccWithProfiling config
-      crossSystem platform;
+      crossSystem;
   };
 
 
   # Used by wine, firefox with debugging version of Flash, ...
-  pkgsi686Linux = forceSystem "i686-linux";
+  pkgsi686Linux = forceSystem "i686-linux" "i386";
 
   callPackage_i686 = lib.callPackageWith (pkgsi686Linux // pkgsi686Linux.xorg);
 
@@ -172,10 +164,10 @@ let
 
   ### Symbolic names.
 
-  x11 = if stdenv.isDarwin then darwinX11AndOpenGL else xlibsWrapper;
+  x11 = xlibsWrapper;
 
   # `xlibs' is the set of X library components.  This used to be the
-  # old modular X llibraries project (called `xlibs') but now it's just
+  # old modular X libraries project (called `xlibs') but now it's just
   # the set of packages in the modular X.org tree (which also includes
   # non-library components like the server, drivers, fonts, etc.).
   xlibs = xorg // {xlibs = xlibsWrapper;};
@@ -213,7 +205,7 @@ let
 
 
   allStdenvs = import ../stdenv {
-    inherit system stdenvType platform config;
+    inherit system platform config lib;
     allPackages = args: import ./all-packages.nix ({ inherit config system; } // args);
   };
 
@@ -259,8 +251,10 @@ let
     theAttrSet = arg;
   };
 
+  autonix = callPackage ../build-support/autonix {};
+
   autoreconfHook = makeSetupHook
-    { substitutions = { inherit autoconf automake libtool; }; }
+    { substitutions = { inherit autoconf automake libtool gettext; }; }
     ../build-support/setup-hooks/autoreconf.sh;
 
   buildEnv = import ../build-support/buildenv {
@@ -268,9 +262,14 @@ let
   };
 
   buildFHSChrootEnv = import ../build-support/build-fhs-chrootenv {
-    inherit stdenv glibc glibcLocales gcc coreutils diffutils findutils;
-    inherit gnused gnugrep gnutar gzip bzip2 bashInteractive xz shadow gawk;
-    inherit less buildEnv;
+    inherit buildEnv system;
+    inherit stdenv glibc glibc_multi glibcLocales;
+    inherit bashInteractive coreutils less shadow su;
+    inherit gawk gcc gcc_multi diffutils findutils gnused gnugrep;
+    inherit gnutar gzip bzip2 xz;
+
+    nixpkgs      = pkgs;
+    nixpkgs_i686 = pkgsi686Linux;
   };
 
   dotnetenv = import ../build-support/dotnetenv {
@@ -282,6 +281,16 @@ let
 
   vsenv = callPackage ../build-support/vsenv {
     vs = vs90wrapper;
+  };
+
+  fetchadc = import ../build-support/fetchadc {
+    inherit curl stdenv;
+    adc_user = if config ? adc_user
+      then config.adc_user
+      else throw "You need an adc_user attribute in your config to download files from Apple Developer Connection";
+    adc_pass = if config ? adc_pass
+      then config.adc_pass
+      else throw "You need an adc_pass attribute in your config to download files from Apple Developer Connection";
   };
 
   fetchbower = import ../build-support/fetchbower {
@@ -302,28 +311,13 @@ let
   };
 
   fetchgit = import ../build-support/fetchgit {
-    inherit stdenv git cacert;
+    inherit stdenv cacert;
+    git = gitMinimal;
   };
 
-  fetchgitPrivate = args: derivation ((fetchgit args).drvAttrs // {
-    SSH_AUTH_SOCK = if (builtins.tryEval <ssh-auth-sock>).success
-      then builtins.toString <ssh-auth-sock>
-      else null;
-    GIT_SSH = pkgs.writeScript "fetchgit-ssh" ''
-      #! ${pkgs.stdenv.shell}
-      exec -a ssh ${pkgs.openssh}/bin/ssh -F ${let
-        sshConfigFile = if (builtins.tryEval <ssh-config-file>).success
-          then <ssh-config-file>
-          else builtins.trace ''
-            Please set your nix-path such that ssh-config-file points to a file that will allow ssh to access private repositories. The builder will not be able to see any running ssh agent sessions unless ssh-auth-sock is also set in the nix-path.
-
-            Note that the config file and any keys it points to must be readable by the build user, which depending on your nix configuration means making it readable by the build-users-group, the user of the running nix-daemon, or the user calling the nix command which started the build. Similarly, if using an ssh agent ssh-auth-sock must point to a socket the build user can access.
-
-            You may need StrictHostKeyChecking=no in the config file. Since ssh will refuse to use a group-readable private key, if using build-users you will likely want to use something like IdentityFile /some/directory/%u/key and have a directory for each build user accessible to that user.
-          '' "/var/lib/empty/config";
-      in builtins.toString sshConfigFile} "$@"
-    '';
-  });
+  fetchgitPrivate = import ../build-support/fetchgit/private.nix {
+    inherit fetchgit writeScript openssh stdenv;
+  };
 
   fetchgitrevision = import ../build-support/fetchgitrevision runCommand git;
 
@@ -366,8 +360,8 @@ let
 
   fetchzip = import ../build-support/fetchzip { inherit lib fetchurl unzip; };
 
-  fetchFromGitHub = { owner, repo, rev, sha256 }: fetchzip {
-    name = "${repo}-${rev}-src";
+  fetchFromGitHub = { owner, repo, rev, sha256, name ? "${repo}-${rev}-src" }: fetchzip {
+    inherit name;
     url = "https://github.com/${owner}/${repo}/archive/${rev}.tar.gz";
     inherit sha256;
   };
@@ -408,6 +402,10 @@ let
     inherit stdenv;
   };
 
+  substituteAllFiles = import ../build-support/substitute-files/substitute-all-files.nix {
+    inherit stdenv;
+  };
+
   replaceDependency = import ../build-support/replace-dependency.nix {
     inherit runCommand nix lib;
   };
@@ -440,8 +438,19 @@ let
     { deps = [ pkgs.lcov pkgs.enableGCOVInstrumentation ]; }
     ../build-support/setup-hooks/make-coverage-analysis-report.sh;
 
+  # intended to be used like nix-build -E 'with <nixpkgs> {}; enableDebugging fooPackage'
+  enableDebugging = pkg: pkg.override { stdenv = stdenvAdapters.keepDebugInfo pkg.stdenv; };
+
+  findXMLCatalogs = makeSetupHook { } ../build-support/setup-hooks/find-xml-catalogs.sh;
+
 
   ### TOOLS
+
+  "3dfsb" = callPackage ../applications/misc/3dfsb {
+    glibc = glibc.override { debugSymbols = true; };
+  };
+
+  abduco = callPackage ../tools/misc/abduco { };
 
   acct = callPackage ../tools/system/acct { };
 
@@ -451,20 +460,29 @@ let
 
   actdiag = pythonPackages.actdiag;
 
+  adom = callPackage ../games/adom { };
+
+  advancecomp = callPackage ../tools/compression/advancecomp {};
+
   aefs = callPackage ../tools/filesystems/aefs { };
 
   aegisub = callPackage ../applications/video/aegisub {
     wxGTK = wxGTK30;
-    lua = lua5_1;
   };
 
   aespipe = callPackage ../tools/security/aespipe { };
 
   aescrypt = callPackage ../tools/misc/aescrypt { };
 
+  afl = callPackage ../tools/security/afl { };
+
   ahcpd = callPackage ../tools/networking/ahcpd { };
 
+  aide = callPackage ../tools/security/aide { };
+
   aircrackng = callPackage ../tools/networking/aircrack-ng { };
+
+  airfield = callPackage ../tools/networking/airfield { };
 
   analog = callPackage ../tools/admin/analog {};
 
@@ -473,6 +491,8 @@ let
   };
 
   apt-offline = callPackage ../tools/misc/apt-offline { };
+
+  apulse = callPackage ../misc/apulse { };
 
   archivemount = callPackage ../tools/filesystems/archivemount { };
 
@@ -484,6 +504,8 @@ let
     jdk = jdk;
     jre = jdk;
   };
+
+  apitrace = callPackage ../applications/graphics/apitrace {};
 
   argyllcms = callPackage ../tools/graphics/argyllcms {};
 
@@ -499,6 +521,10 @@ let
       paths = [ texLive texLiveExtra texLiveCMSuper ];
     };
   };
+
+  attic = callPackage ../tools/backup/attic { };
+
+  avfs = callPackage ../tools/filesystems/avfs { };
 
   awscli = callPackage ../tools/admin/awscli { };
 
@@ -529,6 +555,8 @@ let
 
   grc = callPackage ../tools/misc/grc { };
 
+  lastpass-cli = callPackage ../tools/security/lastpass-cli { };
+
   otool = callPackage ../os-specific/darwin/otool { };
 
   pass = callPackage ../tools/security/pass {
@@ -546,11 +574,10 @@ let
     pkgs_i686 = pkgsi686Linux;
   };
 
-  inherit (androidenv) androidsdk_4_1;
-
-  aria = builderDefsPackage (import ../tools/networking/aria) { };
+  inherit (androidenv) androidsdk_4_4 androidndk;
 
   aria2 = callPackage ../tools/networking/aria2 { };
+  aria = aria2;
 
   at = callPackage ../tools/system/at { };
 
@@ -586,13 +613,41 @@ let
 
   barcode = callPackage ../tools/graphics/barcode {};
 
+  bashmount = callPackage ../tools/filesystems/bashmount {};
+
   bc = callPackage ../tools/misc/bc { };
 
   bcache-tools = callPackage ../tools/filesystems/bcache-tools { };
 
   bchunk = callPackage ../tools/cd-dvd/bchunk { };
 
-  bfr = callPackage ../tools/misc/bfr { };
+  bfr = callPackage ../tools/misc/bfr {
+    perl = perl516; # Docs fail to build with newer versions
+  };
+
+  bibtool = callPackage ../tools/misc/bibtool { };
+
+  bindfs = callPackage ../tools/filesystems/bindfs { };
+
+  binwalk = callPackage ../tools/misc/binwalk {
+    python = pythonFull;
+    wrapPython = pythonPackages.wrapPython;
+    curses = pythonPackages.curses;
+  };
+
+  binwalk-full = callPackage ../tools/misc/binwalk {
+    python = pythonFull;
+    wrapPython = pythonPackages.wrapPython;
+    curses = pythonPackages.curses;
+    visualizationSupport = true;
+    pyqtgraph = pythonPackages.pyqtgraph;
+  };
+
+  bitbucket-cli = pythonPackages.bitbucket-cli;
+
+  blink = callPackage ../applications/networking/instant-messengers/blink { };
+
+  blitz = callPackage ../development/libraries/blitz { };
 
   blockdiag = pythonPackages.blockdiag;
 
@@ -602,7 +657,11 @@ let
 
   boomerang = callPackage ../development/tools/boomerang { };
 
+  boost-build = callPackage ../development/tools/boost-build { };
+
   bootchart = callPackage ../tools/system/bootchart { };
+
+  boxfs = callPackage ../tools/filesystems/boxfs { };
 
   bro = callPackage ../applications/networking/ids/bro { };
 
@@ -614,43 +673,81 @@ let
 
   byobu = callPackage ../tools/misc/byobu { };
 
+  capstone = callPackage ../development/libraries/capstone { };
+
   catdoc = callPackage ../tools/text/catdoc { };
 
   ccnet = callPackage ../tools/networking/ccnet { };
 
-  capstone = callPackage ../development/libraries/capstone { };
+  cloud-init = callPackage ../tools/virtualization/cloud-init { };
+
+  consul = callPackage ../servers/consul {
+   # inherit ruby;
+  };
+
+  consul_ui = consul.ui;
+
+  corosync = callPackage ../servers/corosync { };
+
+  chntpw = callPackage ../tools/security/chntpw { };
 
   coprthr = callPackage ../development/libraries/coprthr {
     flex = flex_2_5_35;
   };
 
-  ditaa = callPackage ../tools/graphics/ditaa { };
+  crawlTiles = callPackage ../games/crawl { };
+
+  crawl = callPackage ../games/crawl {
+    tileMode = false;
+  };
+
+  cv = callPackage ../tools/misc/cv { };
+
+  datamash = callPackage ../tools/misc/datamash { };
+
+  ddate = callPackage ../tools/misc/ddate { };
 
   direnv = callPackage ../tools/misc/direnv { };
 
+  discount = callPackage ../tools/text/discount { };
+
+  ditaa = callPackage ../tools/graphics/ditaa { };
+
   dlx = callPackage ../misc/emulators/dlx { };
+
+  dtrx = callPackage ../tools/compression/dtrx { };
+
+  duperemove = callPackage ../tools/filesystems/duperemove {
+    linuxHeaders = linuxHeaders_3_14;
+  };
 
   eggdrop = callPackage ../tools/networking/eggdrop { };
 
   enca = callPackage ../tools/text/enca { };
 
-  fasd = callPackage ../tools/misc/fasd {
-    inherit (haskellPackages) pandoc;
-  };
+  fasd = callPackage ../tools/misc/fasd { };
 
   fop = callPackage ../tools/typesetting/fop { };
+
+  gist = callPackage ../tools/text/gist { };
 
   mcrl = callPackage ../tools/misc/mcrl { };
 
   mcrl2 = callPackage ../tools/misc/mcrl2 { };
 
+  mp3fs = callPackage ../tools/filesystems/mp3fs { };
+
   mpdcron = callPackage ../tools/audio/mpdcron { };
 
   syslogng = callPackage ../tools/system/syslog-ng { };
 
+  syslogng_incubator = callPackage ../tools/system/syslog-ng-incubator { };
+
   rsyslog = callPackage ../tools/system/rsyslog { };
 
   mcrypt = callPackage ../tools/misc/mcrypt { };
+
+  mstflint = callPackage ../tools/misc/mstflint { };
 
   mcelog = callPackage ../os-specific/linux/mcelog { };
 
@@ -670,9 +767,15 @@ let
 
   autossh = callPackage ../tools/networking/autossh { };
 
+  asynk = callPackage ../tools/networking/asynk { };
+
   bacula = callPackage ../tools/backup/bacula { };
 
+  bareos = callPackage ../tools/backup/bareos { };
+
   beanstalkd = callPackage ../servers/beanstalkd { };
+
+  beets = callPackage ../tools/audio/beets { };
 
   bgs = callPackage ../tools/X11/bgs { };
 
@@ -687,10 +790,6 @@ let
 
   bibtextools = callPackage ../tools/typesetting/bibtex-tools {
     inherit (strategoPackages016) strategoxt sdf;
-  };
-
-  bittorrent = callPackage ../tools/networking/p2p/bittorrent {
-    gui = true;
   };
 
   bittornado = callPackage ../tools/networking/p2p/bit-tornado { };
@@ -709,11 +808,16 @@ let
 
   btar = callPackage ../tools/backup/btar { };
 
+  bud = callPackage ../tools/networking/bud {
+    inherit (pythonPackages) gyp;
+  };
+
   bup = callPackage ../tools/backup/bup {
     inherit (pythonPackages) pyxattr pylibacl setuptools fuse;
-    inherit (haskellPackages) pandoc;
     par2Support = (config.bup.par2Support or false);
   };
+
+  byzanz = callPackage ../applications/video/byzanz {};
 
   ori = callPackage ../tools/backup/ori { };
 
@@ -723,19 +827,29 @@ let
 
   cabextract = callPackage ../tools/archivers/cabextract { };
 
+  cadaver = callPackage ../tools/networking/cadaver { };
+
   cantata = callPackage ../applications/audio/cantata { };
 
   can-utils = callPackage ../os-specific/linux/can-utils { };
 
+  caudec = callPackage ../applications/audio/caudec { };
+
   ccid = callPackage ../tools/security/ccid { };
 
   ccrypt = callPackage ../tools/security/ccrypt { };
+
+  ccze = callPackage ../tools/misc/ccze { };
 
   cdecl = callPackage ../development/tools/cdecl { };
 
   cdrdao = callPackage ../tools/cd-dvd/cdrdao { };
 
   cdrkit = callPackage ../tools/cd-dvd/cdrkit { };
+
+  ceph = callPackage ../tools/filesystems/ceph {
+    zfs = linuxPackages.zfs;
+  };
 
   cfdg = builderDefsPackage ../tools/graphics/cfdg {
     inherit libpng bison flex ffmpeg;
@@ -749,6 +863,8 @@ let
 
   chkrootkit = callPackage ../tools/security/chkrootkit { };
 
+  chocolateDoom = callPackage ../games/chocolate-doom { };
+
   chrony = callPackage ../tools/networking/chrony { };
 
   chunkfs = callPackage ../tools/filesystems/chunkfs { };
@@ -759,9 +875,13 @@ let
 
   cksfv = callPackage ../tools/networking/cksfv { };
 
-  clementine = callPackage ../applications/audio/clementine { };
+  clementine = callPackage ../applications/audio/clementine {
+    boost = boost156;
+  };
 
   ciopfs = callPackage ../tools/filesystems/ciopfs { };
+
+  cmst = callPackage ../tools/networking/cmst { };
 
   colord = callPackage ../tools/misc/colord { };
 
@@ -789,6 +909,8 @@ let
 
   cpuminer = callPackage ../tools/misc/cpuminer { };
 
+  cpuminer-multi = callPackage ../tools/misc/cpuminer-multi { };
+
   cuetools = callPackage ../tools/cd-dvd/cuetools { };
 
   unifdef = callPackage ../development/tools/misc/unifdef { };
@@ -796,6 +918,8 @@ let
   "unionfs-fuse" = callPackage ../tools/filesystems/unionfs-fuse { };
 
   usb_modeswitch = callPackage ../development/tools/misc/usb-modeswitch { };
+
+  anthy = callPackage ../tools/inputmethods/anthy { };
 
   biosdevname = callPackage ../tools/networking/biosdevname { };
 
@@ -810,6 +934,8 @@ let
   cloogppl = callPackage ../development/libraries/cloog-ppl { };
 
   convmv = callPackage ../tools/misc/convmv { };
+
+  cool-old-term = callPackage ../applications/misc/cool-old-term { };
 
   coreutils = callPackage ../tools/misc/coreutils
     {
@@ -845,23 +971,29 @@ let
     sslSupport = zlibSupport;
   };
 
+  curl_unix_socket = callPackage ../tools/networking/curl-unix-socket rec { };
+
   cunit = callPackage ../tools/misc/cunit { };
 
   curlftpfs = callPackage ../tools/filesystems/curlftpfs { };
 
   cutter = callPackage ../tools/networking/cutter { };
 
-  dadadodo = builderDefsPackage (import ../tools/text/dadadodo) { };
+  dadadodo = callPackage ../tools/text/dadadodo { };
 
   daq = callPackage ../applications/networking/ids/daq { };
 
   dar = callPackage ../tools/archivers/dar { };
+
+  darkstat = callPackage ../tools/networking/darkstat { };
 
   davfs2 = callPackage ../tools/filesystems/davfs2 { };
 
   dbench = callPackage ../development/tools/misc/dbench { };
 
   dcraw = callPackage ../tools/graphics/dcraw { };
+
+  dcfldd = callPackage ../tools/system/dcfldd { };
 
   debian_devscripts = callPackage ../tools/misc/debian-devscripts {
     inherit (perlPackages) CryptSSLeay LWP TimeDate DBFile FileDesktopEntry;
@@ -883,7 +1015,11 @@ let
 
   despotify = callPackage ../development/libraries/despotify { };
 
+  dfc  = callPackage ../tools/system/dfc { };
+
   dev86 = callPackage ../development/compilers/dev86 { };
+
+  dnscrypt-proxy = callPackage ../tools/networking/dnscrypt-proxy { };
 
   dnsmasq = callPackage ../tools/networking/dnsmasq { };
 
@@ -893,9 +1029,16 @@ let
 
   dhcpcd = callPackage ../tools/networking/dhcpcd { };
 
+  di = callPackage ../tools/system/di { };
+
   diffstat = callPackage ../tools/text/diffstat { };
 
   diffutils = callPackage ../tools/text/diffutils { };
+
+  dir2opus = callPackage ../tools/audio/dir2opus {
+    inherit (pythonPackages) mutagen python wrapPython;
+    inherit opusTools;
+  };
 
   wgetpaste = callPackage ../tools/text/wgetpaste { };
 
@@ -915,15 +1058,26 @@ let
     inherit (perlPackages) XMLSAX XMLParser XMLNamespaceSupport;
   };
 
+  dog = callPackage ../tools/system/dog { };
+
   dosfstools = callPackage ../tools/filesystems/dosfstools { };
 
   dotnetfx35 = callPackage ../development/libraries/dotnetfx35 { };
 
   dotnetfx40 = callPackage ../development/libraries/dotnetfx40 { };
 
+  dolphinEmu = callPackage ../misc/emulators/dolphin-emu { };
+  dolphinEmuMaster = callPackage ../misc/emulators/dolphin-emu/master.nix { };
+
+  doomseeker = callPackage ../applications/misc/doomseeker { };
+
   dropbear = callPackage ../tools/networking/dropbear { };
 
   dtach = callPackage ../tools/misc/dtach { };
+
+  dub = callPackage ../development/tools/build-managers/dub { };
+
+  duff = callPackage ../tools/filesystems/duff { };
 
   duo-unix = callPackage ../tools/security/duo-unix { };
 
@@ -933,6 +1087,8 @@ let
   };
 
   duply = callPackage ../tools/backup/duply { };
+
+  dvdisaster = callPackage ../tools/cd-dvd/dvdisaster { };
 
   dvdplusrwtools = callPackage ../tools/cd-dvd/dvd+rw-tools { };
 
@@ -955,24 +1111,37 @@ let
 
   edk2 = callPackage ../development/compilers/edk2 { };
 
+  eid-mw = callPackage ../tools/security/eid-mw { };
+
+  eid-viewer = callPackage ../tools/security/eid-viewer { };
+
+  emscripten = callPackage ../development/compilers/emscripten { };
+
+  emscriptenfastcomp = callPackage ../development/compilers/emscripten-fastcomp { };
+
   efibootmgr = callPackage ../tools/system/efibootmgr { };
+
+  efivar = callPackage ../tools/system/efivar { };
+
+  evemu = callPackage ../tools/system/evemu { };
 
   elasticsearch = callPackage ../servers/search/elasticsearch { };
 
-  enblendenfuse = callPackage ../tools/graphics/enblend-enfuse {
-    boost = boost149;
-  };
+  elasticsearchPlugins = recurseIntoAttrs (
+    callPackage ../servers/search/elasticsearch/plugins.nix { }
+  );
+
+  emv = callPackage ../tools/misc/emv { };
+
+  enblendenfuse = callPackage ../tools/graphics/enblend-enfuse { };
 
   encfs = callPackage ../tools/filesystems/encfs { };
 
-  enscript = callPackage ../tools/text/enscript {
-    # fix syntax errors
-    stdenv = if stdenv.isDarwin
-      then clangStdenv
-      else stdenv;
-  };
+  enscript = callPackage ../tools/text/enscript { };
 
   ethtool = callPackage ../tools/misc/ethtool { };
+
+  eternity = callPackage ../games/eternity-engine { };
 
   ettercap = callPackage ../applications/networking/sniffers/ettercap { };
 
@@ -980,7 +1149,11 @@ let
 
   evtest = callPackage ../applications/misc/evtest { };
 
-  exempi = callPackage ../development/libraries/exempi { };
+  exempi = callPackage ../development/libraries/exempi { boost = boost155; };
+
+  execline = callPackage ../tools/misc/execline { };
+
+  exercism = callPackage ../development/tools/exercism { };
 
   exif = callPackage ../tools/graphics/exif { };
 
@@ -994,17 +1167,37 @@ let
 
   fabric = pythonPackages.fabric;
 
-  fail2ban = callPackage ../tools/security/fail2ban { };
+  fail2ban = callPackage ../tools/security/fail2ban {
+    systemd = systemd.override {
+      pythonSupport = true;
+    };
+  };
 
   fakeroot = callPackage ../tools/system/fakeroot { };
 
   fakechroot = callPackage ../tools/system/fakechroot { };
 
+  fatsort = callPackage ../tools/filesystems/fatsort { };
+
+  fatrace = callPackage ../os-specific/linux/fatrace { };
+
   fcitx = callPackage ../tools/inputmethods/fcitx { };
+
+  fcitx-anthy = callPackage ../tools/inputmethods/fcitx/fcitx-anthy.nix { };
+
+  fcitx-configtool = callPackage ../tools/inputmethods/fcitx/fcitx-configtool.nix { };
+
+  fcitx-with-plugins = callPackage ../tools/inputmethods/fcitx/wrapper.nix {
+    plugins = [ ];
+  };
 
   fcron = callPackage ../tools/system/fcron { };
 
   fdm = callPackage ../tools/networking/fdm {};
+
+  flannel = callPackage ../tools/networking/flannel { };
+
+  flashbench = callPackage ../os-specific/linux/flashbench { };
 
   figlet = callPackage ../tools/misc/figlet { };
 
@@ -1024,11 +1217,15 @@ let
     platformTools = androidenv.platformTools;
   };
 
+  flashrom = callPackage ../tools/misc/flashrom { };
+
   flpsed = callPackage ../applications/editors/flpsed { };
 
   flvstreamer = callPackage ../tools/networking/flvstreamer { };
 
   libbsd = callPackage ../development/libraries/libbsd { };
+
+  libbladeRF = callPackage ../development/libraries/libbladeRF { };
 
   lprof = callPackage ../tools/graphics/lprof { };
 
@@ -1037,9 +1234,8 @@ let
   flvtool2 = callPackage ../tools/video/flvtool2 { };
 
   fontforge = lowPrio (callPackage ../tools/misc/fontforge { });
-
-  fontforgeX = callPackage ../tools/misc/fontforge {
-    withX11 = true;
+  fontforge-gtk = callPackage ../tools/misc/fontforge {
+    withGTK = true;
   };
 
   forktty = callPackage ../os-specific/linux/forktty {};
@@ -1056,17 +1252,27 @@ let
 
   fprot = callPackage ../tools/security/fprot { };
 
+  fprintd = callPackage ../tools/security/fprintd { };
+
+  fprint_demo = callPackage ../tools/security/fprint_demo { };
+
   freeipmi = callPackage ../tools/system/freeipmi {};
 
   freetalk = callPackage ../applications/networking/instant-messengers/freetalk {
-    guile = guile_1_8;
+    automake = automake114x;
   };
 
   freetds = callPackage ../development/libraries/freetds { };
 
+  frescobaldi = callPackage ../misc/frescobaldi {};
+
+  frostwire = callPackage ../applications/networking/p2p/frostwire { };
+
   ftgl = callPackage ../development/libraries/ftgl { };
 
   ftgl212 = callPackage ../development/libraries/ftgl/2.1.2.nix { };
+
+  ftop = callPackage ../os-specific/linux/ftop { };
 
   fuppes = callPackage ../tools/networking/fuppes {
     ffmpeg = ffmpeg_0_6_90;
@@ -1093,6 +1299,10 @@ let
   gawkInteractive = appendToName "interactive"
     (gawk.override { readlineSupport = true; });
 
+  gbdfed = callPackage ../tools/misc/gbdfed {
+    gtk = gtk2;
+  };
+
   gdmap = callPackage ../tools/system/gdmap { };
 
   genext2fs = callPackage ../tools/filesystems/genext2fs { };
@@ -1107,7 +1317,18 @@ let
 
   gifsicle = callPackage ../tools/graphics/gifsicle { };
 
+  gitlab = callPackage ../applications/version-management/gitlab {
+    libiconv = libiconvOrLibc;
+    ruby = ruby_2_1_3;
+  };
+
+  gitlab-shell = callPackage ../applications/version-management/gitlab-shell {
+    ruby = ruby_2_1_3;
+  };
+
   glusterfs = callPackage ../tools/filesystems/glusterfs { };
+
+  glmark2 = callPackage ../tools/graphics/glmark2 { };
 
   glxinfo = callPackage ../tools/graphics/glxinfo { };
 
@@ -1123,37 +1344,32 @@ let
     guile = guile_1_8;
   };
 
-  gnugrep = callPackage ../tools/text/gnugrep {
-    libiconv = libiconvOrNull;
-  };
+  gnugrep = callPackage ../tools/text/gnugrep { };
 
   gnulib = callPackage ../development/tools/gnulib { };
 
   gnupatch = callPackage ../tools/text/gnupatch { };
 
-  gnupg1orig = callPackage ../tools/security/gnupg1 { };
+  gnupg1orig = callPackage ../tools/security/gnupg/1.nix { };
 
-  gnupg1compat = callPackage ../tools/security/gnupg1compat { };
+  gnupg1compat = callPackage ../tools/security/gnupg/1compat.nix { };
 
   # use config.packageOverrides if you prefer original gnupg1
   gnupg1 = gnupg1compat;
 
-  gnupg = callPackage ../tools/security/gnupg { libusb = libusb1; };
-
-  gnupg2_1 = lowPrio (callPackage ../tools/security/gnupg/git.nix {
-    libassuan = libassuan2_1;
-  });
-
-  gnuplot = callPackage ../tools/graphics/gnuplot {
-    texLive = null;
-    lua = null;
-    texinfo = texinfo4; # build errors with gnuplot-4.6.3
-
-    # use gccApple to compile on darwin, seems to resolve a malloc error
-    stdenv = if stdenv.isDarwin
-      then stdenvAdapters.overrideGCC stdenv gccApple
-      else stdenv;
+  gnupg20 = callPackage ../tools/security/gnupg/20.nix {
+    libgcrypt = libgcrypt_1_6;
   };
+
+  gnupg21 = callPackage ../tools/security/gnupg/21.nix {
+    libgcrypt = libgcrypt_1_6;
+  };
+
+  gnupg = gnupg20;
+
+  gnuplot = callPackage ../tools/graphics/gnuplot { qt = qt5; };
+
+  gnuplot_qt = gnuplot.override { withQt = true; };
 
   # must have AquaTerm installed separately
   gnuplot_aquaterm = gnuplot.override { aquaterm = true; };
@@ -1166,9 +1382,15 @@ let
 
   goaccess = callPackage ../tools/misc/goaccess { };
 
+  go-mtpfs = callPackage ../tools/filesystems/go-mtpfs { };
+
   googleAuthenticator = callPackage ../os-specific/linux/google-authenticator { };
 
-  gource = callPackage ../applications/version-management/gource {};
+  gource = callPackage ../applications/version-management/gource { };
+
+  gparted = callPackage ../tools/misc/gparted { };
+
+  gpodder = callPackage ../applications/audio/gpodder { };
 
   gptfdisk = callPackage ../tools/system/gptfdisk { };
 
@@ -1176,13 +1398,21 @@ let
 
   grafx2 = callPackage ../applications/graphics/grafx2 {};
 
+  grails = callPackage ../development/web/grails { jdk = null; };
+
   graphviz = callPackage ../tools/graphics/graphviz { };
 
   /* Readded by Michael Raskin. There are programs in the wild
    * that do want 2.0 but not 2.22. Please give a day's notice for
-   * objections before removal.
+   * objections before removal. The feature is integer coordinates
    */
   graphviz_2_0 = callPackage ../tools/graphics/graphviz/2.0.nix { };
+
+  /* Readded by Michael Raskin. There are programs in the wild
+   * that do want 2.32 but not 2.0 or 2.36. Please give a day's notice for
+   * objections before removal. The feature is libgraph.
+   */
+  graphviz_2_32 = callPackage ../tools/graphics/graphviz/2.32.nix { };
 
   grive = callPackage ../tools/filesystems/grive {
     json_c = json-c-0-11; # won't configure with 0.12; others are vulnerable
@@ -1196,9 +1426,19 @@ let
     buggyBiosCDSupport = config.grub.buggyBiosCDSupport or true;
   };
 
-  grub2 = callPackage ../tools/misc/grub/2.0x.nix { libusb = libusb1; flex = flex_2_5_35; };
+  trustedGrub = callPackage_i686 ../tools/misc/grub/trusted.nix {
+    buggyBiosCDSupport = config.grub.buggyBiosCDSupport or true;
+  };
 
-  grub2_efi = grub2.override { EFIsupport = true; };
+  grub2 = callPackage ../tools/misc/grub/2.0x.nix { };
+
+  grub2_efi = grub2.override { efiSupport = true; };
+
+  grub2_zfs = grub2.override { zfsSupport = true; };
+
+  gsmartcontrol = callPackage ../tools/misc/gsmartcontrol {
+    inherit (gnome) libglademm;
+  };
 
   gssdp = callPackage ../development/libraries/gssdp {
     inherit (gnome) libsoup;
@@ -1207,6 +1447,7 @@ let
   gt5 = callPackage ../tools/system/gt5 { };
 
   gtest = callPackage ../development/libraries/gtest {};
+  gmock = callPackage ../development/libraries/gmock {};
 
   gtkdatabox = callPackage ../development/libraries/gtkdatabox {};
 
@@ -1229,7 +1470,7 @@ let
   gupnptools = callPackage ../tools/networking/gupnp-tools {};
 
   gvpe = builderDefsPackage ../tools/networking/gvpe {
-    inherit openssl gmp nettools iproute;
+    inherit openssl gmp nettools iproute zlib;
   };
 
   gvolicon = callPackage ../tools/audio/gvolicon {};
@@ -1242,11 +1483,17 @@ let
 
   partimage = callPackage ../tools/backup/partimage { };
 
+  pgf_graphics = callPackage ../tools/graphics/pgf { };
+
   pigz = callPackage ../tools/compression/pigz { };
+
+  pxz = callPackage ../tools/compression/pxz { };
 
   haproxy = callPackage ../tools/networking/haproxy { };
 
   haveged = callPackage ../tools/security/haveged { };
+
+  hawkthorne = callPackage ../games/hawkthorne { love = love_0_9; };
 
   hardlink = callPackage ../tools/system/hardlink { };
 
@@ -1258,6 +1505,12 @@ let
 
   hdf5 = callPackage ../tools/misc/hdf5 {
     szip = null;
+    mpi = null;
+  };
+
+  hdf5-mpi = hdf5.override {
+    szip = null;
+    mpi = pkgs.openmpi;
   };
 
   heimdall = callPackage ../tools/misc/heimdall { };
@@ -1274,14 +1527,13 @@ let
 
   httpie = callPackage ../tools/networking/httpie { };
 
+  httping = callPackage ../tools/networking/httping {};
+
   httpfs2 = callPackage ../tools/filesystems/httpfs { };
 
-  # FIXME: This Hydra snapshot is outdated and depends on the `nixPerl',
-  # which no longer exists.
-  #
-  # hydra = callPackage ../development/tools/misc/hydra {
-  #   nix = nixUnstable;
-  # };
+  httptunnel = callPackage ../tools/networking/httptunnel { };
+
+  i2pd = callPackage ../tools/networking/i2pd {};
 
   iasl = callPackage ../development/compilers/iasl { };
 
@@ -1294,6 +1546,13 @@ let
   idle3tools = callPackage ../tools/system/idle3tools { };
 
   iftop = callPackage ../tools/networking/iftop { };
+
+  ifuse = callPackage ../tools/filesystems/ifuse/default.nix { };
+
+  ihaskell = callPackage ../development/tools/haskell/ihaskell/wrapper.nix {
+    inherit (pythonPackages) ipython;
+    inherit (haskellPackages) ihaskell ghc;
+  };
 
   imapproxy = callPackage ../tools/networking/imapproxy { };
 
@@ -1309,13 +1568,19 @@ let
 
   iodine = callPackage ../tools/networking/iodine { };
 
-  iperf = callPackage ../tools/networking/iperf { };
+  iperf2 = callPackage ../tools/networking/iperf/2.nix { };
+  iperf3 = callPackage ../tools/networking/iperf/3.nix { };
+  iperf = iperf3;
 
   ipmitool = callPackage ../tools/system/ipmitool {
     static = false;
   };
 
   ipmiutil = callPackage ../tools/system/ipmiutil {};
+
+  ipv6calc = callPackage ../tools/networking/ipv6calc {};
+
+  ipxe = callPackage ../tools/misc/ipxe { };
 
   ised = callPackage ../tools/misc/ised {};
 
@@ -1328,10 +1593,6 @@ let
 
   jdiskreport = callPackage ../tools/misc/jdiskreport { };
 
-  jfsrec = callPackage ../tools/filesystems/jfsrec {
-    boost = boost144;
-  };
-
   jfsutils = callPackage ../tools/filesystems/jfsutils { };
 
   jhead = callPackage ../tools/graphics/jhead { };
@@ -1342,25 +1603,45 @@ let
 
   jnettop = callPackage ../tools/networking/jnettop { };
 
+  john = callPackage ../tools/security/john { };
+
   jq = callPackage ../development/tools/jq {};
 
   jscoverage = callPackage ../development/tools/misc/jscoverage { };
 
   jwhois = callPackage ../tools/networking/jwhois { };
 
+  k2pdfopt = callPackage ../applications/misc/k2pdfopt { };
+
   kazam = callPackage ../applications/video/kazam { };
+
+  kalibrate-rtl = callPackage ../tools/misc/kalibrate-rtl { };
 
   kexectools = callPackage ../os-specific/linux/kexectools { };
 
+  keybase-node-client = callPackage ../applications/misc/keybase-node-client { };
+
   keychain = callPackage ../tools/misc/keychain { };
+
+  kibana = callPackage ../development/tools/misc/kibana { };
 
   kismet = callPackage ../applications/networking/sniffers/kismet { };
 
+  kpcli = callPackage ../tools/security/kpcli { };
+
+  kst = callPackage ../tools/graphics/kst { };
+
+  leocad = callPackage ../applications/graphics/leocad { };
+
   less = callPackage ../tools/misc/less { };
+
+  liquidsoap = callPackage ../tools/audio/liquidsoap/full.nix { };
 
   lockfileProgs = callPackage ../tools/misc/lockfile-progs { };
 
   logstash = callPackage ../tools/misc/logstash { };
+
+  logstash-contrib = callPackage ../tools/misc/logstash/contrib.nix { };
 
   logstash-forwarder = callPackage ../tools/misc/logstash-forwarder { };
 
@@ -1368,11 +1649,15 @@ let
 
   klavaro = callPackage ../games/klavaro {};
 
+  kzipmix = callPackage_i686 ../tools/compression/kzipmix { };
+
   minidlna = callPackage ../tools/networking/minidlna {
     ffmpeg = ffmpeg_0_10;
   };
 
   mmv = callPackage ../tools/misc/mmv { };
+
+  morituri = callPackage ../applications/audio/morituri { };
 
   most = callPackage ../tools/misc/most { };
 
@@ -1380,19 +1665,22 @@ let
 
   netperf = callPackage ../applications/networking/netperf { };
 
+  netsniff-ng = callPackage ../tools/networking/netsniff-ng { };
+
   ninka = callPackage ../development/tools/misc/ninka { };
 
-  nodejs = callPackage ../development/web/nodejs {};
+  nodejs = callPackage ../development/web/nodejs { };
+  nodejs-unstable = callPackage ../development/web/nodejs { unstableVersion = true; };
 
-  nodePackages = recurseIntoAttrs (import ./node-packages.nix {
-    inherit pkgs stdenv nodejs fetchurl fetchgit;
-    neededNatives = [python] ++ lib.optional (lib.elem system lib.platforms.linux) utillinux;
-    self = pkgs.nodePackages;
-  });
+  nodePackages = recurseIntoAttrs (
+    callPackage ./node-packages.nix { self = nodePackages; }
+  );
 
   ldapvi = callPackage ../tools/misc/ldapvi { };
 
   ldns = callPackage ../development/libraries/ldns { };
+
+  leafpad = callPackage ../applications/editors/leafpad { };
 
   lftp = callPackage ../tools/networking/lftp { };
 
@@ -1404,9 +1692,13 @@ let
 
   liboauth = callPackage ../development/libraries/liboauth { };
 
+  libtidy = callPackage ../development/libraries/libtidy { };
+
   libtirpc = callPackage ../development/libraries/ti-rpc { };
 
   libshout = callPackage ../development/libraries/libshout { };
+
+  libqb = callPackage ../development/libraries/libqb { };
 
   libqmi = callPackage ../development/libraries/libqmi { };
 
@@ -1414,9 +1706,19 @@ let
 
   libtorrent = callPackage ../tools/networking/p2p/libtorrent { };
 
+  libtorrent-git = callPackage ../tools/networking/p2p/libtorrent/git.nix { };
+
+  libiberty = callPackage ../development/libraries/libiberty { };
+
+  libibverbs = callPackage ../development/libraries/libibverbs { };
+
+  librdmacm = callPackage ../development/libraries/librdmacm { };
+
   logcheck = callPackage ../tools/system/logcheck {
     inherit (perlPackages) mimeConstruct;
   };
+
+  logkeys = callPackage ../tools/security/logkeys { };
 
   logrotate = callPackage ../tools/system/logrotate { };
 
@@ -1440,9 +1742,15 @@ let
 
   xz = callPackage ../tools/compression/xz { };
 
+  lz4 = callPackage ../tools/compression/lz4 { };
+
   lzop = callPackage ../tools/compression/lzop { };
 
+  macchanger = callPackage ../os-specific/linux/macchanger { };
+
   maildrop = callPackage ../tools/networking/maildrop { };
+
+  mailsend = callPackage ../tools/networking/mailsend { };
 
   mailpile = callPackage ../applications/networking/mailreaders/mailpile { };
 
@@ -1458,11 +1766,15 @@ let
 
   man_db = callPackage ../tools/misc/man-db { };
 
+  mbox = callPackage ../tools/security/mbox { };
+
   memtest86 = callPackage ../tools/misc/memtest86 { };
 
   memtest86plus = callPackage ../tools/misc/memtest86+ { };
 
-  meo = callPackage ../tools/security/meo { };
+  meo = callPackage ../tools/security/meo {
+    boost = boost155;
+  };
 
   mc = callPackage ../tools/misc/mc { };
 
@@ -1486,7 +1798,14 @@ let
 
   megatools = callPackage ../tools/networking/megatools { };
 
-  minecraft = callPackage ../games/minecraft { };
+  mfcuk = callPackage ../tools/security/mfcuk { };
+
+  mfoc = callPackage ../tools/security/mfoc { };
+
+  minecraft = callPackage ../games/minecraft {
+    pulseaudioSupport = config.pulseaudio or true;
+    pulseaudio = pulseaudio.override { ossWrapper = true; };
+  };
 
   minecraft-server = callPackage ../games/minecraft-server { };
 
@@ -1506,6 +1825,8 @@ let
 
   mkpasswd = callPackage ../tools/security/mkpasswd { };
 
+  mkrand = callPackage ../tools/security/mkrand { };
+
   mktemp = callPackage ../tools/security/mktemp { };
 
   mktorrent = callPackage ../tools/misc/mktorrent { };
@@ -1514,14 +1835,20 @@ let
 
   monit = callPackage ../tools/system/monit { };
 
+  moreutils = callPackage ../tools/misc/moreutils {
+    inherit (perlPackages) IPCRun TimeDate TimeDuration;
+    docbook-xsl = docbook_xsl;
+  };
+
   mosh = callPackage ../tools/networking/mosh {
-    boost = boostHeaders;
     inherit (perlPackages) IOTty;
   };
 
   mpage = callPackage ../tools/text/mpage { };
 
   mr = callPackage ../applications/version-management/mr { };
+
+  mrtg = callPackage ../tools/misc/mrtg { };
 
   mscgen = callPackage ../tools/graphics/mscgen { };
 
@@ -1564,6 +1891,8 @@ let
   nbd = callPackage ../tools/networking/nbd { };
 
   ndjbdns = callPackage ../tools/networking/ndjbdns { };
+
+  nestopia = callPackage ../misc/emulators/nestopia { };
 
   netatalk = callPackage ../tools/filesystems/netatalk { };
 
@@ -1619,9 +1948,21 @@ let
 
   pa_applet = callPackage ../tools/audio/pa-applet { };
 
+  pasystray = callPackage ../tools/audio/pasystray {
+    inherit (gnome3) gnome_icon_theme;
+  };
+
+  pnmixer = callPackage ../tools/audio/pnmixer { };
+
+  pwsafe = callPackage ../applications/misc/pwsafe {
+    inherit (xlibs) libXt libXtst libXi xextproto;
+    wxGTK = wxGTK30;
+  };
+
   nifskope = callPackage ../tools/graphics/nifskope { };
 
-  nilfs_utils = callPackage ../tools/filesystems/nilfs-utils {};
+  nilfs-utils = callPackage ../tools/filesystems/nilfs-utils {};
+  nilfs_utils = nilfs-utils;
 
   nitrogen = callPackage ../tools/X11/nitrogen {};
 
@@ -1639,6 +1980,12 @@ let
   };
 
   notbit = callPackage ../applications/networking/notbit { };
+
+  notify-osd = callPackage ../applications/misc/notify-osd { };
+
+  nox = callPackage ../tools/package-management/nox {
+    pythonPackages = python3Packages;
+  };
 
   nss_pam_ldapd = callPackage ../tools/networking/nss-pam-ldapd {};
 
@@ -1675,11 +2022,21 @@ let
 
   obnam = callPackage ../tools/backup/obnam { };
 
+  ocz-toolbox = callPackage ../os-specific/linux/ocz-toolbox { };
+
   odt2txt = callPackage ../tools/text/odt2txt { };
+
+  odamex = callPackage ../games/odamex { };
 
   offlineimap = callPackage ../tools/networking/offlineimap {
     inherit (pythonPackages) sqlite3;
   };
+
+  openarena = callPackage ../games/openarena { };
+
+  opencryptoki = callPackage ../tools/security/opencryptoki { };
+
+  onscripter-en = callPackage ../games/onscripter-en { };
 
   opendbx = callPackage ../development/libraries/opendbx { };
 
@@ -1691,11 +2048,17 @@ let
 
   opendylan_bin = callPackage ../development/compilers/opendylan/bin.nix { };
 
-  openjade = callPackage ../tools/text/sgml/openjade {
-    perl = perl510;
-  };
+  openjade = callPackage ../tools/text/sgml/openjade { };
+
+  openntpd = callPackage ../tools/networking/openntpd { };
 
   openobex = callPackage ../tools/bluetooth/openobex { };
+
+  openopc = callPackage ../tools/misc/openopc {
+    pythonFull = python27.buildEnv.override {
+      extraLibs = [ python27Packages.pyro3 ];
+    };
+  };
 
   openresolv = callPackage ../tools/networking/openresolv { };
 
@@ -1715,13 +2078,23 @@ let
 
   openssh_with_kerberos = pkgs.appendToName "with-kerberos" (openssh.override { withKerberos = true; });
 
-  opensp = callPackage ../tools/text/sgml/opensp { };
+  opensp = callPackage ../tools/text/sgml/opensp {
+    stdenv = if stdenv.isDarwin
+      then allStdenvs.stdenvDarwinNaked
+      else stdenv;
+  };
 
   spCompat = callPackage ../tools/text/sgml/opensp/compat.nix { };
+
+  opentracker = callPackage ../applications/networking/p2p/opentracker { };
 
   openvpn = callPackage ../tools/networking/openvpn { };
 
   openvpn_learnaddress = callPackage ../tools/networking/openvpn/openvpn_learnaddress.nix { };
+
+  update-resolv-conf = callPackage ../tools/networking/openvpn/update-resolv-conf.nix { };
+
+  openvswitch = callPackage ../os-specific/linux/openvswitch { };
 
   optipng = callPackage ../tools/graphics/optipng {
     libpng = libpng12;
@@ -1731,11 +2104,27 @@ let
 
   ossec = callPackage ../tools/security/ossec {};
 
+  ostree = callPackage ../tools/misc/ostree { };
+
   otpw = callPackage ../os-specific/linux/otpw { };
+
+  owncloud = callPackage ../servers/owncloud { };
+
+  owncloudclient = callPackage ../applications/networking/owncloud-client { };
 
   p7zip = callPackage ../tools/archivers/p7zip { };
 
   pal = callPackage ../tools/misc/pal { };
+
+  pandoc = haskell-ng.lib.overrideCabal haskellngPackages.pandoc (drv: {
+    configureFlags = drv.configureFlags or [] ++ ["-fembed_data_files"];
+    buildTools = drv.buildTools or [] ++ [haskellngPackages.hsb2hs];
+    enableSharedExecutables = false;
+    enableSharedLibraries = false;
+    isLibrary = false;
+    doHaddock = false;
+    postFixup = "rm -rf $out/lib $out/nix-support $out/share";
+  });
 
   panomatic = callPackage ../tools/graphics/panomatic { };
 
@@ -1756,6 +2145,8 @@ let
   };
 
   p0f = callPackage ../tools/security/p0f { };
+
+  pngout = callPackage ../tools/graphics/pngout { };
 
   hurdPartedCross =
     if crossSystem != null && crossSystem.config == "i586-pc-gnu"
@@ -1787,6 +2178,8 @@ let
 
   pdf2djvu = callPackage ../tools/typesetting/pdf2djvu { };
 
+  pdf2svg = callPackage ../tools/graphics/pdf2svg { };
+
   pdfjam = callPackage ../tools/typesetting/pdfjam { };
 
   jbig2enc = callPackage ../tools/graphics/jbig2enc { };
@@ -1795,9 +2188,15 @@ let
 
   briss = callPackage ../tools/graphics/briss { };
 
+  brickd = callPackage ../servers/brickd {
+    libusb = libusb1;
+  };
+
   bully = callPackage ../tools/networking/bully { };
 
   pdnsd = callPackage ../tools/networking/pdnsd { };
+
+  peco = callPackage ../tools/text/peco { };
 
   pg_top = callPackage ../tools/misc/pg_top { };
 
@@ -1827,6 +2226,8 @@ let
   plotutils = callPackage ../tools/graphics/plotutils { };
 
   plowshare = callPackage ../tools/misc/plowshare { };
+
+  pngcheck = callPackage ../tools/graphics/pngcheck { };
 
   pngcrush = callPackage ../tools/graphics/pngcrush { };
 
@@ -1858,7 +2259,11 @@ let
 
   prey-bash-client = callPackage ../tools/security/prey { };
 
+  profile-sync-daemon = callPackage ../tools/misc/profile-sync-daemon { };
+
   projectm = callPackage ../applications/audio/projectm { };
+
+  proot = callPackage ../tools/system/proot { };
 
   proxychains = callPackage ../tools/networking/proxychains { };
 
@@ -1894,19 +2299,37 @@ let
     inherit python libsexy pkgconfig libxml2 pygtk pango gtk glib;
   };
 
+  pytrainer = callPackage ../applications/misc/pytrainer { };
+
   openmpi = callPackage ../development/libraries/openmpi { };
+
+  qastools = callPackage ../tools/audio/qastools {
+    qt = qt4;
+  };
 
   qhull = callPackage ../development/libraries/qhull { };
 
   qjoypad = callPackage ../tools/misc/qjoypad { };
 
+  qpdf = callPackage ../development/libraries/qpdf { };
+
+  qscintilla = callPackage ../development/libraries/qscintilla {
+    qt = qt4;
+  };
+
   qshowdiff = callPackage ../tools/text/qshowdiff { };
+
+  quilt = callPackage ../development/tools/quilt { };
 
   radvd = callPackage ../tools/networking/radvd { };
 
   ranger = callPackage ../applications/misc/ranger { };
 
+  rawdog = callPackage ../applications/networking/feedreaders/rawdog { };
+
   privateer = callPackage ../games/privateer { };
+
+  redmine = callPackage ../applications/version-management/redmine { };
 
   rtmpdump = callPackage ../tools/video/rtmpdump { };
 
@@ -1930,15 +2353,23 @@ let
 
   remmina = callPackage ../applications/networking/remote/remmina {};
 
+  remotebox = callPackage ../applications/virtualization/remotebox {};
+
   renameutils = callPackage ../tools/misc/renameutils { };
 
   replace = callPackage ../tools/text/replace { };
 
   reptyr = callPackage ../os-specific/linux/reptyr {};
 
-  rdiff_backup = callPackage ../tools/backup/rdiff-backup { };
+  rescuetime = callPackage ../applications/misc/rescuetime { };
+
+  rdiff-backup = callPackage ../tools/backup/rdiff-backup { };
 
   rdmd = callPackage ../development/compilers/rdmd { };
+
+  rhash = callPackage ../tools/security/rhash { };
+
+  riemann_c_client = callPackage ../tools/misc/riemann-c-client { };
 
   ripmime = callPackage ../tools/networking/ripmime {};
 
@@ -1949,10 +2380,16 @@ let
   rng_tools = callPackage ../tools/security/rng-tools { };
 
   rsnapshot = callPackage ../tools/backup/rsnapshot {
+    perl = perl516; # fails to create docs: POD document had syntax errors
     # For the `logger' command, we can use either `utillinux' or
     # GNU Inetutils.  The latter is more portable.
     logger = inetutils;
   };
+  rsnapshotGit = lowPrio (callPackage ../tools/backup/rsnapshot/git.nix {
+    # For the `logger' command, we can use either `utillinux' or
+    # GNU Inetutils.  The latter is more portable.
+    logger = inetutils;
+  });
 
   rlwrap = callPackage ../tools/misc/rlwrap { };
 
@@ -1964,9 +2401,13 @@ let
 
   rpm = callPackage ../tools/package-management/rpm { };
 
+  rpmextract = callPackage ../tools/archivers/rpmextract { };
+
   rrdtool = callPackage ../tools/misc/rrdtool { };
 
   rtorrent = callPackage ../tools/networking/p2p/rtorrent { };
+
+  rtorrent-git = callPackage ../tools/networking/p2p/rtorrent/git.nix { };
 
   rubber = callPackage ../tools/typesetting/rubber { };
 
@@ -1981,12 +2422,22 @@ let
   s3cmd_15_pre_81e3842f7a = lowPrio (callPackage ../tools/networking/s3cmd/git.nix { });
 
   s3sync = callPackage ../tools/networking/s3sync {
-    ruby = ruby18;
+    ruby = ruby_1_8;
   };
+
+  s6Dns = callPackage ../tools/networking/s6-dns { };
+
+  s6LinuxUtils = callPackage ../os-specific/linux/s6-linux-utils { };
+
+  s6Networking = callPackage ../tools/networking/s6-networking { };
+
+  s6PortableUtils = callPackage ../tools/misc/s6-portable-utils { };
 
   sablotron = callPackage ../tools/text/xml/sablotron { };
 
   safecopy = callPackage ../tools/system/safecopy { };
+
+  safe-rm = callPackage ../tools/system/safe-rm { };
 
   salut_a_toi = callPackage ../applications/networking/instant-messengers/salut-a-toi {};
 
@@ -1999,6 +2450,8 @@ let
   scrypt = callPackage ../tools/security/scrypt { };
 
   sdcv = callPackage ../applications/misc/sdcv { };
+
+  sec = callPackage ../tools/admin/sec { };
 
   seccure = callPackage ../tools/security/seccure { };
 
@@ -2016,11 +2469,11 @@ let
 
   shotwell = callPackage ../applications/graphics/shotwell { };
 
-  shebangfix = callPackage ../tools/misc/shebangfix { };
-
   shellinabox = callPackage ../servers/shellinabox { };
 
   siege = callPackage ../tools/networking/siege {};
+
+  sigil = callPackage ../applications/editors/sigil { };
 
   silc_client = callPackage ../applications/networking/instant-messengers/silc-client { };
 
@@ -2048,12 +2501,9 @@ let
 
   snort = callPackage ../applications/networking/ids/snort { };
 
-  snx = callPackage_i686 ../tools/networking/snx {
-    inherit (pkgsi686Linux) pam gcc33;
-    inherit (pkgsi686Linux.xlibs) libX11;
-  };
-
   solr = callPackage ../servers/search/solr { };
+
+  solvespace = callPackage ../applications/graphics/solvespace { };
 
   sparsehash = callPackage ../development/libraries/sparsehash { };
 
@@ -2063,9 +2513,13 @@ let
 
   sproxy-web = haskellPackages.callPackage ../tools/networking/sproxy-web { };
 
+  sqliteman = callPackage ../applications/misc/sqliteman { };
+
   stardict = callPackage ../applications/misc/stardict/stardict.nix {
     inherit (gnome) libgnomeui scrollkeeper;
   };
+
+  stdman = callPackage ../data/documentation/stdman { };
 
   storebrowse = callPackage ../tools/system/storebrowse { };
 
@@ -2077,10 +2531,7 @@ let
 
   socat2pre = lowPrio (callPackage ../tools/networking/socat/2.x.nix { });
 
-  sourceHighlight = callPackage ../tools/text/source-highlight {
-    # Boost 1.54 causes the "test_regexranges" test to fail
-    boost = boost149;
-  };
+  sourceHighlight = callPackage ../tools/text/source-highlight { };
 
   spaceFM = callPackage ../applications/misc/spacefm { };
 
@@ -2098,11 +2549,17 @@ let
 
   ssdeep = callPackage ../tools/security/ssdeep { };
 
+  sshpass = callPackage ../tools/networking/sshpass { };
+
   ssmtp = callPackage ../tools/networking/ssmtp {
     tlsSupport = true;
   };
 
   ssss = callPackage ../tools/security/ssss { };
+
+  stress = callPackage ../tools/system/stress { };
+
+  stress-ng = callPackage ../tools/system/stress-ng { };
 
   storeBackup = callPackage ../tools/backup/store-backup { };
 
@@ -2111,6 +2568,8 @@ let
   stun = callPackage ../tools/networking/stun { };
 
   stunnel = callPackage ../tools/networking/stunnel { };
+
+  strongswan = callPackage ../tools/networking/strongswan { };
 
   su = shadow.su;
 
@@ -2122,6 +2581,10 @@ let
 
   svnfs = callPackage ../tools/filesystems/svnfs { };
 
+  svtplay-dl = callPackage ../tools/misc/svtplay-dl {
+    inherit (pythonPackages) nose mock;
+  };
+
   sysbench = callPackage ../development/tools/misc/sysbench {};
 
   system_config_printer = callPackage ../tools/misc/system-config-printer {
@@ -2130,13 +2593,21 @@ let
 
   sitecopy = callPackage ../tools/networking/sitecopy { };
 
+  stricat = callPackage ../tools/security/stricat { };
+
   privoxy = callPackage ../tools/networking/privoxy { };
+
+  swaks = callPackage ../tools/networking/swaks { };
 
   t1utils = callPackage ../tools/misc/t1utils { };
 
   tarsnap = callPackage ../tools/backup/tarsnap { };
 
   tcpcrypt = callPackage ../tools/security/tcpcrypt { };
+
+  tboot = callPackage ../tools/security/tboot { };
+
+  tcl2048 = callPackage ../games/tcl2048 { };
 
   tcpdump = callPackage ../tools/networking/tcpdump { };
 
@@ -2147,7 +2618,11 @@ let
   # Work In Progress: it doesn't start unless running a daemon as root
   teamviewer8 = lowPrio (callPackage_i686 ../applications/networking/remote/teamviewer/8.nix { });
 
+  teamviewer9 = lowPrio (callPackage_i686 ../applications/networking/remote/teamviewer/9.nix { });
+
   telnet = callPackage ../tools/networking/telnet { };
+
+  tessel = callPackage ../applications/misc/tessel { };
 
   texmacs = callPackage ../applications/editors/texmacs {
     tex = texLive; /* tetex is also an option */
@@ -2159,9 +2634,13 @@ let
 
   texstudio = callPackage ../applications/editors/texstudio { };
 
-  tiled-qt = callPackage ../applications/editors/tiled-qt { qt = qt4; };
+  thc-hydra = callPackage ../tools/security/thc-hydra { };
+
+  tiled = callPackage ../applications/editors/tiled { qt = qt4; };
 
   tinc = callPackage ../tools/networking/tinc { };
+
+  tinc_pre = callPackage ../tools/networking/tinc/pre.nix { };
 
   tiny8086 = callPackage ../applications/virtualization/8086tiny { };
 
@@ -2169,17 +2648,37 @@ let
 
   tmux = callPackage ../tools/misc/tmux { };
 
+  tmin = callPackage ../tools/security/tmin { };
+
+  tmsu = callPackage ../tools/filesystems/tmsu { };
+
   tor = callPackage ../tools/security/tor { };
+
+  tor-arm = callPackage ../tools/security/tor/tor-arm.nix { };
 
   torbutton = callPackage ../tools/security/torbutton { };
 
-  torbrowser = callPackage ../tools/security/tor/torbrowser.nix { };
+  torbrowser = callPackage ../tools/security/tor/torbrowser.nix {
+    stdenv = overrideGCC stdenv gcc49;
+  };
 
   torsocks = callPackage ../tools/security/tor/torsocks.nix { };
 
+  tpm-quote-tools = callPackage ../tools/security/tpm-quote-tools { };
+
+  tpm-tools = callPackage ../tools/security/tpm-tools { };
+
+  traceroute = callPackage ../tools/networking/traceroute { };
+
+  trash-cli = callPackage ../tools/misc/trash-cli { };
+
   trickle = callPackage ../tools/networking/trickle {};
 
+  trousers = callPackage ../tools/security/trousers { };
+
   ttf2pt1 = callPackage ../tools/misc/ttf2pt1 { };
+
+  tty-clock = callPackage ../tools/misc/tty-clock { };
 
   ttysnoop = callPackage ../os-specific/linux/ttysnoop {};
 
@@ -2189,11 +2688,15 @@ let
 
   ucl = callPackage ../development/libraries/ucl { };
 
+  ucspi-tcp = callPackage ../tools/networking/ucspi-tcp { };
+
   udftools = callPackage ../tools/filesystems/udftools {};
 
   udptunnel = callPackage ../tools/networking/udptunnel { };
 
   ufraw = callPackage ../applications/graphics/ufraw { };
+
+  umlet = callPackage ../tools/misc/umlet { };
 
   unetbootin = callPackage ../tools/cd-dvd/unetbootin { };
 
@@ -2208,6 +2711,8 @@ let
   usbmuxd = callPackage ../tools/misc/usbmuxd {};
 
   vacuum = callPackage ../applications/networking/instant-messengers/vacuum {};
+
+  volatility = callPackage ../tools/security/volatility { };
 
   vidalia = callPackage ../tools/security/vidalia { };
 
@@ -2253,15 +2758,21 @@ let
 
   wal_e = callPackage ../tools/backup/wal-e { };
 
+  watchman = callPackage ../development/tools/watchman { };
+
   wbox = callPackage ../tools/networking/wbox {};
 
   welkin = callPackage ../tools/graphics/welkin {};
 
   testdisk = callPackage ../tools/misc/testdisk { };
 
-  htmlTidy = callPackage ../tools/text/html-tidy { };
+  html2text = callPackage ../tools/text/html2text { };
+
+  html-tidy = callPackage ../tools/text/html-tidy { };
 
   html-xml-utils = callPackage ../tools/text/xml/html-xml-utils { };
+
+  rcm = callPackage ../tools/misc/rcm {};
 
   tftp_hpa = callPackage ../tools/networking/tftp-hpa {};
 
@@ -2310,6 +2821,14 @@ let
 
   ttmkfdir = callPackage ../tools/misc/ttmkfdir { };
 
+  udunits = callPackage ../development/libraries/udunits { };
+
+  uim = callPackage ../tools/inputmethods/uim {
+    inherit (pkgs.kde4) kdelibs;
+  };
+
+  uhub = callPackage ../servers/uhub { };
+
   unclutter = callPackage ../tools/misc/unclutter { };
 
   unbound = callPackage ../tools/networking/unbound { };
@@ -2318,9 +2837,15 @@ let
 
   unrar = callPackage ../tools/archivers/unrar { };
 
+  xar = callPackage ../tools/compression/xar { };
+
   xarchive = callPackage ../tools/archivers/xarchive { };
 
   xarchiver = callPackage ../tools/archivers/xarchiver { };
+
+  xbrightness = callPackage ../tools/X11/xbrightness { };
+
+  xcruiser = callPackage ../applications/misc/xcruiser { };
 
   unarj = callPackage ../tools/archivers/unarj { };
 
@@ -2332,6 +2857,8 @@ let
 
   uptimed = callPackage ../tools/system/uptimed { };
 
+  urlwatch = callPackage ../tools/networking/urlwatch { };
+
   varnish = callPackage ../servers/varnish { };
 
   varnish2 = callPackage ../servers/varnish/2.1.nix { };
@@ -2341,6 +2868,8 @@ let
   };
 
   vlan = callPackage ../tools/networking/vlan { };
+
+  volumeicon = callPackage ../tools/audio/volumeicon { };
 
   wakelan = callPackage ../tools/networking/wakelan { };
 
@@ -2371,11 +2900,20 @@ let
 
   wicd = callPackage ../tools/networking/wicd { };
 
-  wkhtmltopdf = callPackage ../tools/graphics/wkhtmltopdf { };
+  wipe = callPackage ../tools/security/wipe { };
+
+  wkhtmltopdf = callPackage ../tools/graphics/wkhtmltopdf {
+    overrideDerivation = lib.overrideDerivation;
+    inherit (xlibs) libX11 libXext libXrender;
+  };
+
+  wml = callPackage ../development/web/wml { };
 
   wv = callPackage ../tools/misc/wv { };
 
   wv2 = callPackage ../tools/misc/wv2 { };
+
+  wyrd = callPackage ../tools/misc/wyrd { };
 
   x86info = callPackage ../os-specific/linux/x86info { };
 
@@ -2416,17 +2954,23 @@ let
 
   xclip = callPackage ../tools/misc/xclip { };
 
+  xtitle = callPackage ../tools/misc/xtitle { };
+
   xdelta = callPackage ../tools/compression/xdelta { };
+
+  xdummy = callPackage ../tools/misc/xdummy { };
 
   xfsprogs = callPackage ../tools/filesystems/xfsprogs { };
 
-  xmlroff = callPackage ../tools/typesetting/xmlroff {
-    inherit (gnome) libgnomeprint;
-  };
+  xml2 = callPackage ../tools/text/xml/xml2 { };
+
+  xmlroff = callPackage ../tools/typesetting/xmlroff { };
 
   xmlstarlet = callPackage ../tools/text/xml/xmlstarlet { };
 
-  xmlto = callPackage ../tools/typesetting/xmlto { };
+  xmlto = callPackage ../tools/typesetting/xmlto {
+    w3m = w3m.override { graphicsSupport = false; };
+  };
 
   xmltv = callPackage ../tools/misc/xmltv { };
 
@@ -2446,7 +2990,11 @@ let
 
   xvfb_run = callPackage ../tools/misc/xvfb-run { inherit (texFunctions) fontsConf; };
 
-  youtubeDL = callPackage ../tools/misc/youtube-dl { };
+  xvkbd = callPackage ../tools/X11/xvkbd {
+    inherit (xlibs) libXt libXaw libXtst xextproto libXi libXpm gccmakedep;
+  };
+
+  youtube-dl = callPackage ../tools/misc/youtube-dl { };
 
   zbar = callPackage ../tools/graphics/zbar {
     pygtk = lib.overrideDerivation pygtk (x: {
@@ -2469,6 +3017,8 @@ let
 
   zsync = callPackage ../tools/compression/zsync { };
 
+  zxing = callPackage ../tools/graphics/zxing {};
+
 
   ### SHELLS
 
@@ -2478,14 +3028,17 @@ let
 
   bashInteractive = appendToName "interactive" (callPackage ../shells/bash {
     interactive = true;
-    readline = readline63; # Includes many vi mode fixes
   });
 
   bashCompletion = callPackage ../shells/bash-completion { };
 
   dash = callPackage ../shells/dash { };
 
-  fish = callPackage ../shells/fish { };
+  fish = callPackage ../shells/fish {
+    python = python27Full;
+  };
+
+  mksh = callPackage ../shells/mksh { };
 
   tcsh = callPackage ../shells/tcsh { };
 
@@ -2518,16 +3071,24 @@ let
 
   bigloo = callPackage ../development/compilers/bigloo { };
 
-  chicken = callPackage ../development/compilers/chicken { };
+  fetchegg = callPackage ../build-support/fetchegg { };
 
-  ccl = builderDefsPackage ../development/compilers/ccl {};
+  eggDerivation = callPackage ../development/compilers/chicken/eggDerivation.nix { };
 
-  clang = wrapClang llvmPackages.clang;
+  chicken = callPackage ../development/compilers/chicken {
+    bootstrap-chicken = chicken.override { bootstrap-chicken = null; };
+  };
 
-  clang_34 = wrapClang llvmPackages_34.clang;
-  clang_33 = wrapClang (clangUnwrapped llvm_33 ../development/compilers/llvm/3.3/clang.nix);
-  clang_32 = wrapClang (clangUnwrapped llvm_32 ../development/compilers/llvm/3.2/clang.nix);
-  clang_31 = wrapClang (clangUnwrapped llvm_31 ../development/compilers/llvm/3.1/clang.nix);
+  egg2nix = callPackage ../development/tools/egg2nix {
+    chickenEggs = callPackage ../development/tools/egg2nix/chicken-eggs.nix { };
+  };
+
+  ccl = callPackage ../development/compilers/ccl { };
+
+  clang = wrapGCC llvmPackages.clang;
+
+  clang_34 = wrapGCC llvmPackages_34.clang;
+  clang_33 = wrapGCC (clangUnwrapped llvm_33 ../development/compilers/llvm/3.3/clang.nix);
 
   clangAnalyzer = callPackage ../development/tools/analysis/clang-analyzer {
     clang = clang_34;
@@ -2535,27 +3096,24 @@ let
   };
 
   clangUnwrapped = llvm: pkg: callPackage pkg {
-      stdenv = if stdenv.isDarwin
-         then stdenvAdapters.overrideGCC stdenv gccApple
-         else stdenv;
-      llvm = llvm;
+    inherit stdenv llvm;
   };
 
   clangSelf = clangWrapSelf llvmPackagesSelf.clang;
 
-  clangWrapSelf = build: (import ../build-support/clang-wrapper) {
-    clang = build;
+  clangWrapSelf = build: (import ../build-support/gcc-wrapper) {
+    gcc = build;
     stdenv = clangStdenv;
     libc = glibc;
     binutils = binutils;
-    shell = bash;
-    inherit libcxx coreutils zlib;
+    inherit coreutils zlib;
+    extraPackages = [ libcxx ];
     nativeTools = false;
     nativeLibc = false;
   };
 
   #Use this instead of stdenv to build with clang
-  clangStdenv = lowPrio (stdenvAdapters.overrideGCC stdenv clang);
+  clangStdenv = if stdenv.isDarwin then stdenv else lowPrio (stdenvAdapters.overrideGCC stdenv clang);
   libcxxStdenv = stdenvAdapters.overrideGCC stdenv (clangWrapSelf llvmPackages.clang);
 
   clean = callPackage ../development/compilers/clean { };
@@ -2564,17 +3122,14 @@ let
 
   cmucl_binary = callPackage ../development/compilers/cmucl/binary.nix { };
 
-  compcert = callPackage_i686 ../development/compilers/compcert {};
+  coan = callPackage ../development/tools/analysis/coan { };
 
-  cryptol1 = lowPrio (callPackage ../development/compilers/cryptol/1.8.x.nix {});
-  cryptol2 = haskellPackages.cryptol;
+  compcert = callPackage ../development/compilers/compcert {};
+
+  cryptol = haskell-ng.packages.ghc763.cryptol;
 
   cython = pythonPackages.cython;
   cython3 = python3Packages.cython;
-
-  dylan = callPackage ../development/compilers/gwydion-dylan {
-    dylan = callPackage ../development/compilers/gwydion-dylan/binary.nix {  };
-  };
 
   ecl = callPackage ../development/compilers/ecl { };
 
@@ -2583,35 +3138,17 @@ let
   adobe_flex_sdk = callPackage ../development/compilers/adobe-flex-sdk { };
 
   fpc = callPackage ../development/compilers/fpc { };
-  fpc_2_4_0 = callPackage ../development/compilers/fpc/2.4.0.nix { };
 
   gambit = callPackage ../development/compilers/gambit { };
 
-  gcc = gcc48;
+  gcc       = gcc48;
+  gcc_multi = gcc48_multi;
 
-  gcc33 = wrapGCC (import ../development/compilers/gcc/3.3 {
-    inherit fetchurl stdenv noSysDirs;
-  });
+  gccApple = throw "gccApple is no longer supported";
 
   gcc34 = wrapGCC (import ../development/compilers/gcc/3.4 {
     inherit fetchurl stdenv noSysDirs;
   });
-
-  # XXX: GCC 4.2 (and possibly others) misdetects `makeinfo' when
-  # using Texinfo >= 4.10, just because it uses a stupid regexp that
-  # expects a single digit after the dot.  As a workaround, we feed
-  # GCC with Texinfo 4.9.  Stupid bug, hackish workaround.
-
-  gcc42 = wrapGCC (makeOverridable (import ../development/compilers/gcc/4.2) {
-    inherit fetchurl stdenv noSysDirs;
-    profiledCompiler = false;
-  });
-
-  gcc43 = lowPrio (wrapGCC (makeOverridable (import ../development/compilers/gcc/4.3) {
-    inherit stdenv fetchurl gmp mpfr noSysDirs;
-    texinfo = texinfo4;
-    profiledCompiler = true;
-  }));
 
   gcc48_realCross = lib.addMetaAttrs { hydraPlatforms = []; }
     (callPackage ../development/compilers/gcc/4.8 {
@@ -2775,34 +3312,6 @@ let
       else null;
   }));
 
-  gcc49_multi =
-    if system == "x86_64-linux" then lowPrio (
-      wrapGCCWith (import ../build-support/gcc-wrapper) glibc_multi (gcc49.gcc.override {
-        stdenv = overrideGCC stdenv (wrapGCCWith (import ../build-support/gcc-wrapper) glibc_multi gcc.gcc);
-        profiledCompiler = false;
-        enableMultilib = true;
-      }))
-    else throw "Multilib gcc not supported on ‘${system}’";
-
-  gcc49_debug = lowPrio (wrapGCC (callPackage ../development/compilers/gcc/4.9 {
-    stripped = false;
-
-    inherit noSysDirs;
-    cross = null;
-    libcCross = null;
-    binutilsCross = null;
-  }));
-
-  gccApple =
-    assert stdenv.isDarwin;
-    wrapGCC (makeOverridable (import ../development/compilers/gcc/4.2-apple64) {
-      inherit fetchurl noSysDirs;
-      profiledCompiler = true;
-      # Since it fails to build with GCC 4.6, build it with the "native"
-      # Apple-GCC.
-      stdenv = allStdenvs.stdenvNative;
-    });
-
   gfortran = gfortran48;
 
   gfortran48 = wrapGCC (gcc48.gcc.override {
@@ -2829,7 +3338,7 @@ let
       libXrandr xproto renderproto xextproto inputproto randrproto;
   });
 
-  gnat = gnat45;
+  gnat = gnat45; # failed to make 4.6 or 4.8 build
 
   gnat45 = wrapGCC (gcc45.gcc.override {
     name = "gnat";
@@ -2844,20 +3353,7 @@ let
     ppl = null;
   });
 
-  gnat46 = wrapGCC (gcc46.gcc.override {
-    name = "gnat";
-    langCC = false;
-    langC = true;
-    langAda = true;
-    profiledCompiler = false;
-    gnatboot = gnat45;
-    # We can't use the ppl stuff, because we would have
-    # libstdc++ problems.
-    ppl = null;
-    cloog = null;
-  });
-
-  gnatboot = wrapGCC (import ../development/compilers/gnatboot {
+  gnatboot = wrapGCC-old (import ../development/compilers/gnatboot {
     inherit fetchurl stdenv;
   });
 
@@ -2914,11 +3410,16 @@ let
   };
   gcc-arm-embedded = gcc-arm-embedded-4_8;
 
+  gforth = callPackage ../development/compilers/gforth {};
+
   # Haskell and GHC
 
   # Import Haskell infrastructure.
 
-  haskell = callPackage ./haskell-defaults.nix { inherit pkgs; };
+  haskell = let pkgs_       = pkgs // { gmp = gmp.override { withStatic = true; }; };
+                callPackage = newScope pkgs_;
+                newScope    = extra: lib.callPackageWith (pkgs_ // pkgs_.xorg // extra);
+            in callPackage ./haskell-defaults.nix { pkgs = pkgs_; inherit callPackage newScope; };
 
   # Available GHC versions.
 
@@ -2936,35 +3437,32 @@ let
     builtins.substring 0 (builtins.stringLength "packages_") name == "packages_"
   ) haskell));
 
-  haskellPackages = haskellPackages_ghc763;
-  haskellPlatform = haskellPlatformPackages."2013_2_0_0";
-
   haskellPackages_ghc6104 = haskell.packages_ghc6104;
   haskellPackages_ghc6123 = haskell.packages_ghc6123;
   haskellPackages_ghc704  = haskell.packages_ghc704;
   haskellPackages_ghc722  = haskell.packages_ghc722;
   haskellPackages_ghc742  = haskell.packages_ghc742;
-  # For the default version, we build profiling versions of the libraries, too.
-  # The following three lines achieve that: the first two make Hydra build explicit
-  # profiling and non-profiling versions; the final respects the user-configured
-  # default setting.
-  haskellPackages_ghc763_no_profiling = recurseIntoAttrs haskell.packages_ghc763.noProfiling;
-  haskellPackages_ghc763_profiling    = recurseIntoAttrs haskell.packages_ghc763.profiling;
-  haskellPackages_ghc763              = recurseIntoAttrs haskell.packages_ghc763.highPrio;
-  # Reasonably current HEAD snapshot.
-  haskellPackages_ghc782 = haskell.packages_ghc782;
-  haskellPackages_ghcHEAD = haskell.packages_ghcHEAD;
+  haskellPackages_ghc763  = haskell.packages_ghc763;
+  haskellPackages_ghc784_no_profiling = recurseIntoAttrs haskell.packages_ghc784.noProfiling;
+  haskellPackages_ghc784_profiling    = recurseIntoAttrs haskell.packages_ghc784.profiling;
+  haskellPackages_ghc784              = recurseIntoAttrs haskell.packages_ghc784.highPrio;
+  haskellPackages_ghcjs = haskell.packages_ghcjs;
+  haskellPackages = haskellPackages_ghc784;
 
-  haskellPlatformPackages = recurseIntoAttrs (import ../development/libraries/haskell/haskell-platform { inherit pkgs; });
+  haskell-ng = callPackage ./haskell-ng.nix { };
+  haskellngPackages = haskell-ng.packages.ghc784.override {
+    overrides = config.haskellPackageOverrides or (self: super: {});
+    provideOldAttributeNames = config.provideOldHaskellAttributeNames or false;
+  };
 
   haxe = callPackage ../development/compilers/haxe { };
 
   hhvm = callPackage ../development/compilers/hhvm { };
   hiphopvm = hhvm; /* Compatibility alias */
 
-  falcon = builderDefsPackage (import ../development/interpreters/falcon) {
-    inherit cmake;
-  };
+  hop = callPackage ../development/compilers/hop { };
+
+  falcon = callPackage ../development/interpreters/falcon { };
 
   fsharp = callPackage ../development/compilers/fsharp {};
 
@@ -2980,7 +3478,13 @@ let
 
   go_1_3 = callPackage ../development/compilers/go/1.3.nix { };
 
-  go = go_1_3;
+  go_1_4 = callPackage ../development/compilers/go/1.4.nix { };
+
+  go = go_1_4;
+
+  go-repo-root = callPackage ../development/tools/misc/go-repo-root { };
+
+  go-bindata = callPackage ../tools/misc/go-bindata { };
 
   gox = callPackage ../development/compilers/go/gox.nix { };
 
@@ -2990,7 +3494,7 @@ let
 
   icedtea7_jdk = callPackage ../development/compilers/icedtea rec {
     jdk = openjdk;
-    jdkPath = "${openjdk}/lib/openjdk";
+    giflib = giflib_5_0;
   } // { outputs = [ "out" ]; };
 
   icedtea7_jre = (lib.setName "icedtea7-${lib.getVersion pkgs.icedtea7_jdk.jre}" (lib.addMetaAttrs
@@ -2998,8 +3502,13 @@ let
     pkgs.icedtea7_jdk.jre)) // { outputs = [ "jre" ]; };
 
   icedtea7_web = callPackage ../development/compilers/icedtea-web {
-    jdk = "${icedtea7_jdk}/lib/icedtea";
+    jdk = icedtea7_jdk;
+    xulrunner = firefox;
   };
+
+  icedtea_jdk = icedtea7_jdk;
+  icedtea_jre = icedtea7_jre;
+  icedtea_web = icedtea7_web;
 
   ikarus = callPackage ../development/compilers/ikarus { };
 
@@ -3017,25 +3526,40 @@ let
         jdk = openjdkBootstrap;
       }) // { outputs = [ "out" ]; };
 
+  openjdk8 = callPackage ../development/compilers/openjdk/openjdk8.nix { } // { outputs = [ "out" ]; };
+
   # FIXME: Need a way to set per-output meta attributes.
   openjre = (lib.setName "openjre-${lib.getVersion pkgs.openjdk.jre}" (lib.addMetaAttrs
     { description = "The open-source Java Runtime Environment"; }
     pkgs.openjdk.jre)) // { outputs = [ "jre" ]; };
 
-  jdk = if stdenv.isDarwin || stdenv.system == "i686-linux" || stdenv.system == "x86_64-linux"
-    then pkgs.openjdk
-    else pkgs.oraclejdk;
-  jre = if stdenv.isDarwin || stdenv.system == "i686-linux" || stdenv.system == "x86_64-linux"
-    then pkgs.openjre
-    else pkgs.oraclejre;
+  jdk = if stdenv.system == "i686-linux" || stdenv.system == "x86_64-linux"
+    then pkgs.icedtea_jdk
+    else if stdenv.isDarwin
+      then pkgs.openjdk # TODO: Use icedtea for darwin
+      else pkgs.oraclejdk;
+
+  jre = if stdenv.system == "i686-linux" || stdenv.system == "x86_64-linux"
+    then pkgs.icedtea_jre
+    else if stdenv.isDarwin
+      then pkgs.openjre # TODO: Use icedtea for darwin
+      else pkgs.oraclejre;
 
   oraclejdk = pkgs.jdkdistro true false;
 
   oraclejdk7 = pkgs.oraclejdk7distro true false;
 
+  oraclejdk7psu = pkgs.oraclejdk7psu_distro true false;
+
+  oraclejdk8 = pkgs.oraclejdk8distro true false;
+
   oraclejre = lowPrio (pkgs.jdkdistro false false);
 
   oraclejre7 = lowPrio (pkgs.oraclejdk7distro false false);
+
+  oraclejre7psu = lowPrio (pkgs.oraclejdk7psu_distro false false);
+
+  oraclejre8 = lowPrio (pkgs.oraclejdk8distro false false);
 
   jrePlugin = lowPrio (pkgs.jdkdistro false true);
 
@@ -3046,28 +3570,44 @@ let
   jdkdistro = installjdk: pluginSupport:
     assert supportsJDK;
     (if pluginSupport then appendToName "with-plugin" else x: x)
-      (callPackage ../development/compilers/jdk/jdk6-linux.nix { });
+      (callPackage ../development/compilers/oraclejdk/jdk6-linux.nix { });
 
   oraclejdk7distro = installjdk: pluginSupport:
     assert supportsJDK;
     (if pluginSupport then appendToName "with-plugin" else x: x)
-      (callPackage ../development/compilers/jdk/jdk7-linux.nix { inherit installjdk; });
+      (callPackage ../development/compilers/oraclejdk/jdk7-linux.nix { inherit installjdk; });
+
+  oraclejdk7psu_distro = installjdk: pluginSupport:
+    assert supportsJDK;
+    (if pluginSupport then appendToName "with-plugin" else x: x)
+      (callPackage ../development/compilers/oraclejdk/jdk7psu-linux.nix { inherit installjdk; });
+
+  oraclejdk8distro = installjdk: pluginSupport:
+    assert supportsJDK;
+    (if pluginSupport then appendToName "with-plugin" else x: x)
+      (callPackage ../development/compilers/oraclejdk/jdk8-linux.nix { inherit installjdk; });
 
   jikes = callPackage ../development/compilers/jikes { };
 
-  juliaGit = callPackage ../development/compilers/julia/git-20131013.nix {
+  julia02 = callPackage ../development/compilers/julia/0.2.nix {
     liblapack = liblapack.override {shared = true;};
     llvm = llvm_33;
+    openblas = openblas_0_2_2;
+    suitesparse = suitesparse_4_2;
   };
-  julia021 = callPackage ../development/compilers/julia/0.2.1.nix {
-    liblapack = liblapack.override {shared = true;};
-    llvm = llvm_33;
-  };
-  julia = julia021;
 
-  lazarus = builderDefsPackage (import ../development/compilers/fpc/lazarus.nix) {
-    inherit makeWrapper gtk glib pango atk gdk_pixbuf;
-    inherit (xlibs) libXi inputproto libX11 xproto libXext xextproto;
+  julia03 = let
+    liblapack = liblapack_3_5_0.override {shared = true;};
+  in callPackage ../development/compilers/julia/0.3.nix {
+    inherit liblapack;
+    suitesparse = suitesparse_4_2.override {
+      inherit liblapack;
+    };
+    llvm = llvm_33;
+  };
+  julia = julia03;
+
+  lazarus = callPackage ../development/compilers/fpc/lazarus.nix {
     fpc = fpc;
   };
 
@@ -3077,26 +3617,18 @@ let
 
   llvm_34 = llvmPackages_34.llvm;
   llvm_33 = llvm_v ../development/compilers/llvm/3.3/llvm.nix;
-  llvm_32 = llvm_v ../development/compilers/llvm/3.2;
-  llvm_31 = llvm_v ../development/compilers/llvm/3.1;
 
-  llvm_v = path: callPackage path {
-    stdenv = if stdenv.isDarwin
-      then stdenvAdapters.overrideGCC stdenv gccApple
-      else stdenv;
-  };
+  llvm_v = path: callPackage path { };
 
-  llvmPackages = if !stdenv.isDarwin then llvmPackages_34 else llvmPackages_34 // {
-    # until someone solves build problems with _34
-    llvm = llvm_33;
-    clang = clang_33;
-  };
+  llvmPackages = llvmPackages_34;
 
   llvmPackages_34 = recurseIntoAttrs (import ../development/compilers/llvm/3.4 {
     inherit stdenv newScope fetchurl;
     isl = isl_0_12;
   });
   llvmPackagesSelf = import ../development/compilers/llvm/3.4 { inherit newScope fetchurl; isl = isl_0_12; stdenv = libcxxStdenv; };
+
+  manticore = callPackage ../development/compilers/manticore { };
 
   mentorToolchains = recurseIntoAttrs (
     callPackage_i686 ../development/compilers/mentor {}
@@ -3114,7 +3646,8 @@ let
 
   monoDLLFixer = callPackage ../build-support/mono-dll-fixer { };
 
-  mozart = callPackage ../development/compilers/mozart { };
+  mozart-binary = callPackage ../development/compilers/mozart/binary.nix { };
+  mozart = mozart-binary;
 
   neko = callPackage ../development/compilers/neko { };
 
@@ -3136,22 +3669,45 @@ let
 
   ocaml_4_01_0 = callPackage ../development/compilers/ocaml/4.01.0.nix { };
 
+  ocaml_4_02_1 = callPackage ../development/compilers/ocaml/4.02.1.nix { };
+
   orc = callPackage ../development/compilers/orc { };
 
   metaocaml_3_09 = callPackage ../development/compilers/ocaml/metaocaml-3.09.nix { };
 
   ber_metaocaml_003 = callPackage ../development/compilers/ocaml/ber-metaocaml-003.nix { };
 
-  mkOcamlPackages = ocaml: self: let callPackage = newScope self; in rec {
+  mkOcamlPackages = ocaml: self:
+    let
+      callPackage = newScope self;
+      ocaml_version = (builtins.parseDrvName ocaml.name).version;
+    in rec {
     inherit ocaml;
+
+    acgtk = callPackage ../applications/science/logic/acgtk { };
+
+    ansiterminal = callPackage ../development/ocaml-modules/ansiterminal { };
+
+    bolt = callPackage ../development/ocaml-modules/bolt { };
 
     camlidl = callPackage ../development/tools/ocaml/camlidl { };
 
-    camlp5_5_strict = callPackage ../development/tools/ocaml/camlp5/5.15.nix { };
+    camlp4 =
+      if lib.versionOlder "4.02" ocaml_version
+      then callPackage ../development/tools/ocaml/camlp4 { }
+      else null;
 
-    camlp5_5_transitional = callPackage ../development/tools/ocaml/camlp5/5.15.nix {
-      transitional = true;
-    };
+    camlp5_old_strict =
+      if lib.versionOlder "4.00" ocaml_version
+      then camlp5_6_strict
+      else callPackage ../development/tools/ocaml/camlp5/5.15.nix { };
+
+    camlp5_old_transitional =
+      if lib.versionOlder "4.00" ocaml_version
+      then camlp5_6_transitional
+      else callPackage ../development/tools/ocaml/camlp5/5.15.nix {
+        transitional = true;
+      };
 
     camlp5_6_strict = callPackage ../development/tools/ocaml/camlp5 { };
 
@@ -3163,41 +3719,114 @@ let
 
     camlp5_transitional = camlp5_6_transitional;
 
+    camlpdf = callPackage ../development/ocaml-modules/camlpdf { };
+
+    calendar = callPackage ../development/ocaml-modules/calendar { };
+
     camlzip = callPackage ../development/ocaml-modules/camlzip { };
 
     camomile_0_8_2 = callPackage ../development/ocaml-modules/camomile/0.8.2.nix { };
     camomile = callPackage ../development/ocaml-modules/camomile { };
 
-    camlimages = callPackage ../development/ocaml-modules/camlimages {
+    camlimages_4_0 = callPackage ../development/ocaml-modules/camlimages/4.0.nix {
       libpng = libpng12;
       giflib = giflib_4_1;
     };
+    camlimages_4_1 = callPackage ../development/ocaml-modules/camlimages/4.1.nix {
+      giflib = giflib_4_1;
+    };
+    camlimages = camlimages_4_1;
+
+    biniou = callPackage ../development/ocaml-modules/biniou { };
 
     ocaml_cairo = callPackage ../development/ocaml-modules/ocaml-cairo { };
 
+    ocaml_cairo2 = callPackage ../development/ocaml-modules/ocaml-cairo2 { };
+
+    cil = callPackage ../development/ocaml-modules/cil { };
+
+    cmdliner = callPackage ../development/ocaml-modules/cmdliner { };
+
+    config-file = callPackage ../development/ocaml-modules/config-file { };
+
+    cppo = callPackage ../development/tools/ocaml/cppo { };
+
     cryptokit = callPackage ../development/ocaml-modules/cryptokit { };
+
+    csv = callPackage ../development/ocaml-modules/csv { };
 
     deriving = callPackage ../development/tools/ocaml/deriving { };
 
+    easy-format = callPackage ../development/ocaml-modules/easy-format { };
+
+    eff = callPackage ../development/interpreters/eff { };
+
+    eliom = callPackage ../development/ocaml-modules/eliom { };
+
+    ezjsonm = callPackage ../development/ocaml-modules/ezjsonm {
+      lwt = ocaml_lwt;
+      sexplib = ocaml_sexplib;
+    };
+
+    fieldslib = callPackage ../development/ocaml-modules/fieldslib { };
+
     findlib = callPackage ../development/tools/ocaml/findlib { };
+
+    fix = callPackage ../development/ocaml-modules/fix { };
+
+    functory = callPackage ../development/ocaml-modules/functory { };
+
+    javalib = callPackage ../development/ocaml-modules/javalib {
+      extlib = ocaml_extlib_maximal;
+    };
 
     dypgen = callPackage ../development/ocaml-modules/dypgen { };
 
     patoline = callPackage ../tools/typesetting/patoline { };
 
+    gapi_ocaml = callPackage ../development/ocaml-modules/gapi-ocaml { };
+
+    gg = callPackage ../development/ocaml-modules/gg { };
+
     gmetadom = callPackage ../development/ocaml-modules/gmetadom { };
+
+    gtktop = callPackage ../development/ocaml-modules/gtktop { };
+
+    hex = callPackage ../development/ocaml-modules/hex { };
+
+    js_of_ocaml = callPackage ../development/tools/ocaml/js_of_ocaml { };
+
+    jsonm = callPackage ../development/ocaml-modules/jsonm { };
 
     lablgl = callPackage ../development/ocaml-modules/lablgl { };
 
+    lablgtk_2_14 = callPackage ../development/ocaml-modules/lablgtk/2.14.0.nix {
+      inherit (gnome) libgnomecanvas libglade gtksourceview;
+    };
     lablgtk = callPackage ../development/ocaml-modules/lablgtk {
       inherit (gnome) libgnomecanvas libglade gtksourceview;
     };
+
+    lablgtk-extras =
+      if lib.versionOlder "4.02" ocaml_version
+      then callPackage ../development/ocaml-modules/lablgtk-extras { }
+      else callPackage ../development/ocaml-modules/lablgtk-extras/1.4.nix { };
 
     lablgtkmathview = callPackage ../development/ocaml-modules/lablgtkmathview {
       gtkmathview = callPackage ../development/libraries/gtkmathview { };
     };
 
+    lambdaTerm = callPackage ../development/ocaml-modules/lambda-term { };
+
+    macaque = callPackage ../development/ocaml-modules/macaque { };
+
+    magick = callPackage ../development/ocaml-modules/magick { };
+
     menhir = callPackage ../development/ocaml-modules/menhir { };
+
+    merlin = callPackage ../development/tools/ocaml/merlin { };
+
+    mezzo = callPackage ../development/compilers/mezzo { };
 
     mldonkey = callPackage ../applications/networking/p2p/mldonkey { };
 
@@ -3211,11 +3840,15 @@ let
 
     ocaml_expat = callPackage ../development/ocaml-modules/expat { };
 
+    ocamlfuse = callPackage ../development/ocaml-modules/ocamlfuse { };
+
     ocamlgraph = callPackage ../development/ocaml-modules/ocamlgraph { };
 
     ocaml_http = callPackage ../development/ocaml-modules/http { };
 
     ocamlify = callPackage ../development/tools/ocaml/ocamlify { };
+
+    ocaml_ipaddr = callPackage ../development/ocaml-modules/ocaml-ipaddr { };
 
     ocaml_lwt = callPackage ../development/ocaml-modules/lwt { };
 
@@ -3227,11 +3860,18 @@ let
 
     ocaml_oasis = callPackage ../development/tools/ocaml/oasis { };
 
+    ocaml_optcomp = callPackage ../development/ocaml-modules/optcomp { };
+
     ocaml_pcre = callPackage ../development/ocaml-modules/pcre {
       inherit pcre;
     };
 
+    pgocaml = callPackage ../development/ocaml-modules/pgocaml {};
+
     ocaml_react = callPackage ../development/ocaml-modules/react { };
+    reactivedata = callPackage ../development/ocaml-modules/reactivedata {};
+
+    ocamlscript = callPackage ../development/tools/ocaml/ocamlscript { };
 
     ocamlsdl= callPackage ../development/ocaml-modules/ocamlsdl { };
 
@@ -3239,7 +3879,21 @@ let
 
     ocaml_ssl = callPackage ../development/ocaml-modules/ssl { };
 
+    ocaml_text = callPackage ../development/ocaml-modules/ocaml-text { };
+
+    ocpBuild = callPackage ../development/tools/ocaml/ocp-build { };
+
+    ocpIndent = callPackage ../development/tools/ocaml/ocp-indent { };
+
+    ocsigen_server = callPackage ../development/ocaml-modules/ocsigen-server { };
+
+    ojquery = callPackage ../development/ocaml-modules/ojquery { };
+
+    otfm = callPackage ../development/ocaml-modules/otfm { };
+
     ounit = callPackage ../development/ocaml-modules/ounit { };
+
+    tyxml = callPackage ../development/ocaml-modules/tyxml { };
 
     ulex = callPackage ../development/ocaml-modules/ulex { };
 
@@ -3247,53 +3901,121 @@ let
       camlp5 = camlp5_transitional;
     };
 
-    ocaml_typeconv = callPackage ../development/ocaml-modules/typeconv { };
+    typeconv_108_08_00 = callPackage ../development/ocaml-modules/typeconv/108.08.00.nix { };
+    ocaml_typeconv =
+      if lib.versionOlder "4.00" ocaml_version
+      then callPackage ../development/ocaml-modules/typeconv { }
+      else if lib.versionOlder "3.12" ocaml_version
+      then typeconv_108_08_00
+      else null;
 
-    ocaml_typeconv_3_0_5 = callPackage ../development/ocaml-modules/typeconv/3.0.5.nix { };
-
-    ocaml_sexplib = callPackage ../development/ocaml-modules/sexplib { };
+    sexplib_108_08_00 = callPackage ../development/ocaml-modules/sexplib/108.08.00.nix {
+      typeconv = typeconv_108_08_00;
+    };
+    ocaml_sexplib =
+      if lib.versionOlder "4.00" ocaml_version
+      then callPackage ../development/ocaml-modules/sexplib { }
+      else if lib.versionOlder "3.12" ocaml_version
+      then sexplib_108_08_00
+      else null;
 
     ocaml_extlib = callPackage ../development/ocaml-modules/extlib { };
+    ocaml_extlib_maximal = callPackage ../development/ocaml-modules/extlib {
+      minimal = false;
+    };
+
+    ocurl = callPackage ../development/ocaml-modules/ocurl { };
+
+    pprint = callPackage ../development/ocaml-modules/pprint { };
 
     pycaml = callPackage ../development/ocaml-modules/pycaml { };
 
-    opam_1_0_0 = callPackage ../development/tools/ocaml/opam/1.0.0.nix { };
-    opam_1_1 = callPackage ../development/tools/ocaml/opam/1.1.nix { };
-    opam = opam_1_1;
+    re = callPackage ../development/ocaml-modules/re { };
+
+    safepass = callPackage ../development/ocaml-modules/safepass { };
+
+    sqlite3EZ = callPackage ../development/ocaml-modules/sqlite3EZ { };
+
+    stringext = callPackage ../development/ocaml-modules/stringext { };
+
+    twt = callPackage ../development/ocaml-modules/twt { };
+
+    utop = callPackage ../development/tools/ocaml/utop { };
+
+    sawja = callPackage ../development/ocaml-modules/sawja { };
+
+    uucd = callPackage ../development/ocaml-modules/uucd { };
+    uucp = callPackage ../development/ocaml-modules/uucp { };
+    uunf = callPackage ../development/ocaml-modules/uunf { };
+
+    uri = callPackage ../development/ocaml-modules/uri {
+      sexplib = ocaml_sexplib;
+    };
+
+    uuseg = callPackage ../development/ocaml-modules/uuseg { };
+    uutf = callPackage ../development/ocaml-modules/uutf { };
+
+    vg = callPackage ../development/ocaml-modules/vg { };
+
+    xmlm = callPackage ../development/ocaml-modules/xmlm { };
+
+    yojson = callPackage ../development/ocaml-modules/yojson { };
 
     zarith = callPackage ../development/ocaml-modules/zarith { };
+
+    zed = callPackage ../development/ocaml-modules/zed { };
+
+    ocsigen_deriving = callPackage ../development/ocaml-modules/ocsigen-deriving { };
+
   };
 
   ocamlPackages = recurseIntoAttrs ocamlPackages_4_01_0;
-  ocamlPackages_3_10_0 = mkOcamlPackages ocaml_3_10_0 pkgs.ocamlPackages_3_10_0;
-  ocamlPackages_3_11_2 = mkOcamlPackages ocaml_3_11_2 pkgs.ocamlPackages_3_11_2;
-  ocamlPackages_3_12_1 = mkOcamlPackages ocaml_3_12_1 pkgs.ocamlPackages_3_12_1;
+  ocamlPackages_3_10_0 = (mkOcamlPackages ocaml_3_10_0 pkgs.ocamlPackages_3_10_0)
+  // { lablgtk = ocamlPackages_3_10_0.lablgtk_2_14; };
+  ocamlPackages_3_11_2 = (mkOcamlPackages ocaml_3_11_2 pkgs.ocamlPackages_3_11_2)
+  // { lablgtk = ocamlPackages_3_11_2.lablgtk_2_14; };
+  ocamlPackages_3_12_1 = (mkOcamlPackages ocaml_3_12_1 pkgs.ocamlPackages_3_12_1)
+  // { camlimages = ocamlPackages_3_12_1.camlimages_4_0; };
   ocamlPackages_4_00_1 = mkOcamlPackages ocaml_4_00_1 pkgs.ocamlPackages_4_00_1;
   ocamlPackages_4_01_0 = mkOcamlPackages ocaml_4_01_0 pkgs.ocamlPackages_4_01_0;
-  ocamlPackages_latest = ocamlPackages_4_01_0;
+  ocamlPackages_4_02_1 = mkOcamlPackages ocaml_4_02_1 pkgs.ocamlPackages_4_02_1;
+  ocamlPackages_latest = ocamlPackages_4_02_1;
 
   ocaml_make = callPackage ../development/ocaml-modules/ocamlmake { };
 
-  opa = let callPackage = newScope pkgs.ocamlPackages_3_12_1; in callPackage ../development/compilers/opa { };
+  opa = callPackage ../development/compilers/opa {
+    ocamlPackages = ocamlPackages_4_00_1;
+  };
+
+  opam_1_0_0 = callPackage ../development/tools/ocaml/opam/1.0.0.nix { };
+  opam_1_1 = callPackage ../development/tools/ocaml/opam/1.1.nix {
+    inherit (ocamlPackages_4_01_0) ocaml;
+  };
+  opam_1_2_0 = callPackage ../development/tools/ocaml/opam/1.2.0.nix { };
+  opam = opam_1_2_0;
 
   ocamlnat = let callPackage = newScope pkgs.ocamlPackages_3_12_1; in callPackage ../development/ocaml-modules/ocamlnat { };
-
-  opencxx = callPackage ../development/compilers/opencxx {
-    gcc = gcc33;
-  };
 
   qcmm = callPackage ../development/compilers/qcmm {
     lua   = lua4;
     ocaml = ocaml_3_08_0;
   };
 
-  roadsend = callPackage ../development/compilers/roadsend { };
+  rustc       = callPackage ../development/compilers/rustc/1.0.0-alpha.nix {};
+  rustcMaster = callPackage ../development/compilers/rustc/head.nix {};
 
-  rust = callPackage ../development/compilers/rust {};
 
   sbclBootstrap = callPackage ../development/compilers/sbcl/bootstrap.nix {};
   sbcl = callPackage ../development/compilers/sbcl {
-    clisp = clisp_2_44_1;
+    clisp = clisp;
+  };
+  # For StumpWM
+  sbcl_1_2_5 = callPackage ../development/compilers/sbcl/1.2.5.nix {
+    clisp = clisp;
+  };
+  # For ACL2
+  sbcl_1_2_0 = callPackage ../development/compilers/sbcl/1.2.0.nix {
+    clisp = clisp;
   };
 
   scala_2_9 = callPackage ../development/compilers/scala/2.9.nix { };
@@ -3334,6 +4056,8 @@ let
 
   vala = callPackage ../development/compilers/vala/default.nix { };
 
+  vala_0_26 = callPackage ../development/compilers/vala/0.26.nix { };
+
   visualcpp = callPackage ../development/compilers/visual-c++ { };
 
   vs90wrapper = callPackage ../development/compilers/vs90wrapper { };
@@ -3343,29 +4067,17 @@ let
   win32hello = callPackage ../development/compilers/visual-c++/test { };
 
   wrapGCCWith = gccWrapper: glibc: baseGCC: gccWrapper {
-    nativeTools = stdenv ? gcc && stdenv.gcc.nativeTools;
-    nativeLibc = stdenv ? gcc && stdenv.gcc.nativeLibc;
-    nativePrefix = if stdenv ? gcc then stdenv.gcc.nativePrefix else "";
+    nativeTools = stdenv.cc.nativeTools or false;
+    nativeLibc = stdenv.cc.nativeLibc or false;
+    nativePrefix = stdenv.cc.nativePrefix or "";
     gcc = baseGCC;
     libc = glibc;
-    shell = bash;
     inherit stdenv binutils coreutils zlib;
   };
 
-  wrapClangWith = clangWrapper: glibc: baseClang: clangWrapper {
-    nativeTools = stdenv.gcc.nativeTools or false;
-    nativeLibc = stdenv.gcc.nativeLibc or false;
-    nativePrefix = stdenv.gcc.nativePrefix or "";
-    clang = baseClang;
-    libc = glibc;
-    shell = bash;
-    binutils = stdenv.gcc.binutils;
-    inherit stdenv coreutils zlib;
-  };
-
-  wrapClang = wrapClangWith (makeOverridable (import ../build-support/clang-wrapper)) glibc;
-
   wrapGCC = wrapGCCWith (makeOverridable (import ../build-support/gcc-wrapper)) glibc;
+  # legacy version, used for gnat bootstrapping
+  wrapGCC-old = wrapGCCWith (makeOverridable (import ../build-support/gcc-wrapper-old)) glibc;
 
   wrapGCCCross =
     {gcc, libc, binutils, cross, shell ? "", name ? "gcc-cross-wrapper"}:
@@ -3377,6 +4089,27 @@ let
       inherit stdenv gcc binutils libc shell name cross;
     });
 
+  /* Alternative GCC wrapper that uses the standard -I include flag instead of
+   * -isystem. The -isystem flag can change the search order specified by prior
+   * -I flags. For KDE 5 packages, we don't want to interfere with the include
+   * search path order specified by the build system. Some packages depend on
+   * Qt 4 and Qt 5 simultaneously; because the two Qt versions provide headers
+   * with the same filenames, we must respect the search order specified by the
+   * build system so that the Qt 4 components find the Qt 4 headers and the Qt 5
+   * components find the Qt 5 headers.
+   */
+  wrapGCCStdInc = glibc: baseGCC: (import ../build-support/gcc-wrapper) {
+    nativeTools = stdenv.cc.nativeTools or false;
+    nativeLibc = stdenv.cc.nativeLibc or false;
+    nativePrefix = stdenv.cc.nativePrefix or "";
+    gcc = baseGCC;
+    libc = glibc;
+    inherit stdenv binutils coreutils zlib;
+    setupHook = ../build-support/gcc-wrapper/setup-hook-stdinc.sh;
+  };
+
+  gccStdInc = wrapGCCStdInc glibc gcc.gcc;
+
   # prolog
   yap = callPackage ../development/compilers/yap { };
 
@@ -3386,15 +4119,18 @@ let
   ### DEVELOPMENT / INTERPRETERS
 
   acl2 = builderDefsPackage ../development/interpreters/acl2 {
-    inherit sbcl;
+    sbcl = sbcl_1_2_0;
   };
 
   angelscript = callPackage ../development/interpreters/angelscript {};
 
+  chibi = callPackage ../development/interpreters/chibi { };
+
   clisp = callPackage ../development/interpreters/clisp { };
 
   # compatibility issues in 2.47 - at list 2.44.1 is known good
-  # for sbcl bootstrap
+  # for sbcl bootstrap.
+  # SBCL page recommends 2.33.2, though. Not sure when was it last tested
   clisp_2_44_1 = callPackage ../development/interpreters/clisp/2.44.1.nix {
     libsigsegv = libsigsegv_25;
   };
@@ -3406,8 +4142,11 @@ let
   erlangR14 = callPackage ../development/interpreters/erlang/R14.nix { };
   erlangR15 = callPackage ../development/interpreters/erlang/R15.nix { };
   erlangR16 = callPackage ../development/interpreters/erlang/R16.nix { };
+  erlangR16_odbc = callPackage ../development/interpreters/erlang/R16.nix { odbcSupport = true; };
   erlangR17 = callPackage ../development/interpreters/erlang/R17.nix { };
+  erlangR17_odbc = callPackage ../development/interpreters/erlang/R17.nix { odbcSupport = true; };
   erlang = erlangR17;
+  erlang_odbc = erlangR17_odbc;
 
   rebar = callPackage ../development/tools/build-managers/rebar { };
 
@@ -3427,6 +4166,8 @@ let
 
   j = callPackage ../development/interpreters/j {};
 
+  jimtcl = callPackage ../development/interpreters/jimtcl {};
+
   jmeter = callPackage ../applications/networking/jmeter {};
 
   davmail = callPackage ../applications/networking/davmail {};
@@ -3435,9 +4176,11 @@ let
 
   kona = callPackage ../development/interpreters/kona {};
 
-  love = callPackage ../development/interpreters/love {lua=lua5;};
+  love = callPackage ../development/interpreters/love {lua=lua5_1;};
   love_luajit = callPackage ../development/interpreters/love {lua=luajit;};
   love_0_9 = callPackage ../development/interpreters/love/0.9.nix { };
+
+  ### LUA MODULES
 
   lua4 = callPackage ../development/interpreters/lua-4 { };
   lua5_0 = callPackage ../development/interpreters/lua-5/5.0.3.nix { };
@@ -3446,21 +4189,43 @@ let
   lua5_2_compat = callPackage ../development/interpreters/lua-5/5.2.nix {
     compat = true;
   };
-  lua5 = lua5_1;
+  lua5 = lua5_2_compat;
+  lua = lua5;
 
-  lua5_sockets = callPackage ../development/interpreters/lua-5/sockets.nix {};
+  lua51Packages = recurseIntoAttrs (callPackage ./lua-packages.nix { lua = lua5_1; });
+  lua52Packages = recurseIntoAttrs (callPackage ./lua-packages.nix { lua = lua5_2; });
 
-  luarocks = callPackage ../development/tools/misc/luarocks {
-     lua = lua5;
-  };
+  luaPackages = lua52Packages;
+
+  lua5_1_sockets = lua51Packages.luasocket;
+
+  lua5_expat = callPackage ../development/interpreters/lua-5/expat.nix {};
+  lua5_sec = callPackage ../development/interpreters/lua-5/sec.nix { };
 
   luajit = callPackage ../development/interpreters/luajit {};
+
+  luarocks = luaPackages.luarocks;
+
+  ### END OF LUA
 
   lush2 = callPackage ../development/interpreters/lush {};
 
   maude = callPackage ../development/interpreters/maude {
     bison = bison2;
     flex = flex_2_5_35;
+  };
+
+  mesos = callPackage ../applications/networking/cluster/mesos {
+    sasl = cyrus_sasl;
+    automake = automake114x;
+    inherit (pythonPackages) python boto setuptools distutils-cfg wrapPython;
+    pythonProtobuf = pythonPackages.protobuf;
+  };
+
+  mujs = callPackage ../development/interpreters/mujs { };
+
+  nix-exec = callPackage ../development/interpreters/nix-exec {
+    git = gitMinimal;
   };
 
   octave = callPackage ../development/interpreters/octave {
@@ -3471,9 +4236,8 @@ let
     hdf5 = null;
     glpk = null;
     suitesparse = null;
-    openjdk = null;
+    jdk = null;
     gnuplot = null;
-    readline = readline63;
   };
   octaveFull = (lowPrio (callPackage ../development/interpreters/octave {
     fltk = fltk13;
@@ -3485,44 +4249,21 @@ let
 
   ocropus = callPackage ../applications/misc/ocropus { };
 
-  perl58 = callPackage ../development/interpreters/perl/5.8 {
-    impureLibcPath = if stdenv.isLinux then null else "/usr";
-  };
+  perl516 = callPackage ../development/interpreters/perl/5.16 { };
 
-  perl510 = callPackage ../development/interpreters/perl/5.10 { };
-
-  perl514 = callPackage ../development/interpreters/perl/5.14 { };
-
-  perl516 = callPackage ../development/interpreters/perl/5.16 {
+  perl520 = callPackage ../development/interpreters/perl/5.20 {
     fetchurl = fetchurlBoot;
   };
 
-  perl520 = callPackage ../development/interpreters/perl/5.20 { };
-
-  perl = if system != "i686-cygwin" then perl516 else sysPerl;
+  perl = if system != "i686-cygwin" then perl520 else sysPerl;
 
   php = php54;
 
-  phpPackages = import ./php-packages.nix {
+  phpPackages = recurseIntoAttrs (import ./php-packages.nix {
     inherit php pkgs;
-  };
-
-  php53 = callPackage ../development/interpreters/php/5.3.nix { };
-
-  php_fpm53 = callPackage ../development/interpreters/php/5.3.nix {
-    config = config // {
-      php = (config.php or {}) // {
-        fpm = true;
-        apxs2 = false;
-      };
-    };
-  };
+  });
 
   php54 = callPackage ../development/interpreters/php/5.4.nix { };
-
-  php_apc = callPackage ../development/libraries/php-apc { };
-
-  php_xcache = callPackage ../development/libraries/php-xcache { };
 
   picolisp = callPackage ../development/interpreters/picolisp {};
 
@@ -3530,41 +4271,58 @@ let
 
   polyml = callPackage ../development/compilers/polyml { };
 
-  pure = callPackage ../development/interpreters/pure {
-    llvm = llvm_33 ;
+  pure = callPackage ../development/interpreters/pure { };
+  pure-gsl = callPackage ../development/pure-modules/pure-gsl { };
+
+  python = python2;
+  python2 = python27;
+  python3 = python34;
+
+  # pythonPackages further below, but assigned here because they need to be in sync
+  pythonPackages = python2Packages;
+  python2Packages = python27Packages;
+  python3Packages = python34Packages;
+
+  python26 = callPackage ../development/interpreters/python/2.6 {
+    db = db47;
+    self = python26;
+  };
+  python27 = callPackage ../development/interpreters/python/2.7 {
+    self = python27;
+  };
+  python32 = callPackage ../development/interpreters/python/3.2 {
+    self = python32;
+  };
+  python33 = callPackage ../development/interpreters/python/3.3 {
+    self = python33;
+  };
+  python34 = hiPrio (callPackage ../development/interpreters/python/3.4 {
+    self = python34;
+  });
+  pypy = callPackage ../development/interpreters/pypy/2.4 {
+    self = pypy;
   };
 
-  python26 = callPackage ../development/interpreters/python/2.6 { db = db47; };
-  python27 = callPackage ../development/interpreters/python/2.7 { libX11 = xlibs.libX11; };
-  python32 = callPackage ../development/interpreters/python/3.2 { };
-  python33 = callPackage ../development/interpreters/python/3.3 { };
-  python34 = hiPrio (callPackage ../development/interpreters/python/3.4 { });
-  python = python27;
-  python3 = python3Packages.python;
-
-  pypy = callPackage ../development/interpreters/pypy/2.3 { };
-
-  pythonFull = python27Full;
-  python26Full = callPackage ../development/interpreters/python/wrapper.nix {
-    extraLibs = [];
-    postBuild = "";
-    python = python26;
-    inherit (python26Packages) recursivePthLoader;
+  pythonFull = python2Full;
+  python2Full = python27Full;
+  python26Full = python26.override {
+    includeModules = true;
+    self = python26Full;
   };
-  python27Full = callPackage ../development/interpreters/python/wrapper.nix {
-    extraLibs = [];
-    postBuild = "";
-    python = python27;
-    inherit (python27Packages) recursivePthLoader;
+  python27Full = python27.override {
+    includeModules = true;
+    self = python27Full;
   };
+
+  python2nix = callPackage ../tools/package-management/python2nix { };
 
   pythonDocs = recurseIntoAttrs (import ../development/interpreters/python/docs {
     inherit stdenv fetchurl lib;
   });
 
-  pythonLinkmeWrapper = callPackage ../development/interpreters/python/python-linkme-wrapper.nix { };
-
   pypi2nix = python27Packages.pypi2nix;
+
+  svg2tikz = python27Packages.svg2tikz;
 
   pyrex = pyrex095;
 
@@ -3586,17 +4344,33 @@ let
     wrapPython = pythonPackages.wrapPython;
   };
 
-  ruby18 = callPackage ../development/interpreters/ruby/ruby-18.nix { };
-  ruby19 = callPackage ../development/interpreters/ruby/ruby-19.nix { };
-  ruby2 = lowPrio (callPackage ../development/interpreters/ruby/ruby-2.0.nix { });
+  bundix = callPackage ../development/interpreters/ruby/bundix {
+    ruby = ruby_2_1_3;
+  };
+  bundler = callPackage ../development/interpreters/ruby/bundler.nix { };
+  bundler_HEAD = import ../development/interpreters/ruby/bundler-head.nix {
+    inherit buildRubyGem coreutils fetchgit;
+  };
+  defaultGemConfig = callPackage ../development/interpreters/ruby/bundler-env/default-gem-config.nix { };
+  buildRubyGem = callPackage ../development/interpreters/ruby/gem.nix { };
+  bundlerEnv = callPackage ../development/interpreters/ruby/bundler-env { };
 
-  ruby = ruby19;
+  ruby_1_8_7 = callPackage ../development/interpreters/ruby/ruby-1.8.7.nix { };
+  ruby_1_9_3 = callPackage ../development/interpreters/ruby/ruby-1.9.3.nix { };
+  ruby_2_0_0 = lowPrio (callPackage ../development/interpreters/ruby/ruby-2.0.0.nix { });
+  ruby_2_1_0 = lowPrio (callPackage ../development/interpreters/ruby/ruby-2.1.0.nix { });
+  ruby_2_1_1 = lowPrio (callPackage ../development/interpreters/ruby/ruby-2.1.1.nix { });
+  ruby_2_1_2 = lowPrio (callPackage ../development/interpreters/ruby/ruby-2.1.2.nix { });
+  ruby_2_1_3 = lowPrio (callPackage ../development/interpreters/ruby/ruby-2.1.3.nix { });
+  ruby_2_2_0 = lowPrio (callPackage ../development/interpreters/ruby/ruby-2.2.0.nix { });
 
-  rubyLibs = recurseIntoAttrs (callPackage ../development/interpreters/ruby/libs.nix { });
-
-  rake = rubyLibs.rake;
-
-  rubySqlite3 = callPackage ../development/ruby-modules/sqlite3 { };
+  # Ruby aliases
+  ruby = ruby_1_9;
+  ruby_1_8 = ruby_1_8_7;
+  ruby_1_9 = ruby_1_9_3;
+  ruby_2_0 = ruby_2_0_0;
+  ruby_2_1 = ruby_2_1_3;
+  ruby_2_2 = ruby_2_2_0;
 
   rubygemsFun = ruby: builderDefsPackage (import ../development/interpreters/ruby/rubygems.nix) {
     inherit ruby makeWrapper;
@@ -3608,6 +4382,8 @@ let
   scsh = callPackage ../development/interpreters/scsh { };
 
   scheme48 = callPackage ../development/interpreters/scheme48 { };
+
+  self = callPackage_i686 ../development/interpreters/self { };
 
   spark = callPackage ../applications/networking/cluster/spark { };
 
@@ -3628,12 +4404,10 @@ let
 
   tcl = callPackage ../development/interpreters/tcl { };
 
-  xulrunnerWrapper = {application, launcher}:
-    import ../development/interpreters/xulrunner/wrapper {
-      inherit stdenv application launcher xulrunner;
-    };
-
-  xulrunner = pkgs.firefoxPkgs.xulrunner;
+  xulrunner = callPackage ../development/interpreters/xulrunner {
+    inherit (gnome) libIDL;
+    inherit (pythonPackages) pysqlite;
+  };
 
 
   ### DEVELOPMENT / MISC
@@ -3687,7 +4461,14 @@ let
 
   guile_ncurses = callPackage ../development/guile-modules/guile-ncurses { };
 
+  guile-opengl = callPackage ../development/guile-modules/guile-opengl { };
+
+  guile-sdl = callPackage ../development/guile-modules/guile-sdl { };
+
   guile-xcb = callPackage ../development/guile-modules/guile-xcb { };
+
+  pharo-vm = callPackage_i686 ../development/pharo/vm { };
+  pharo-launcher = callPackage ../development/pharo/launcher { };
 
   srecord = callPackage ../development/tools/misc/srecord { };
 
@@ -3696,8 +4477,11 @@ let
       inherit fetchurl stdenv cabextract;
     });
 
+  xidel = callPackage ../tools/text/xidel { };
 
   ### DEVELOPMENT / TOOLS
+
+  augeas = callPackage ../tools/system/augeas { };
 
   ansible = callPackage ../tools/system/ansible { };
 
@@ -3711,9 +4495,16 @@ let
 
   astyle = callPackage ../development/tools/misc/astyle { };
 
+  atom-shell = callPackage ../development/tools/atom-shell {
+    gconf = pkgs.gnome.GConf;
+  };
+
+
   autobuild = callPackage ../development/tools/misc/autobuild { };
 
   autoconf = callPackage ../development/tools/misc/autoconf { };
+
+  autoconf-archive = callPackage ../development/tools/misc/autoconf-archive { };
 
   autoconf213 = callPackage ../development/tools/misc/autoconf/2.13.nix { };
 
@@ -3739,9 +4530,11 @@ let
 
   bam = callPackage ../development/tools/build-managers/bam {};
 
-  binutils = callPackage ../development/tools/misc/binutils {
-    inherit noSysDirs;
-  };
+  binutils = if stdenv.isDarwin
+    then import ../build-support/native-darwin-cctools-wrapper {inherit stdenv;}
+    else callPackage ../development/tools/misc/binutils {
+      inherit noSysDirs;
+    };
 
   binutils_nogold = lowPrio (callPackage ../development/tools/misc/binutils {
     inherit noSysDirs;
@@ -3760,16 +4553,22 @@ let
   bison3 = callPackage ../development/tools/parsing/bison/3.x.nix { };
   bison = bison3;
 
+  bossa = callPackage ../development/tools/misc/bossa {
+    wxGTK = wxGTK30;
+  };
+
   buildbot = callPackage ../development/tools/build-managers/buildbot {
     inherit (pythonPackages) twisted jinja2 sqlalchemy sqlalchemy_migrate;
     dateutil = pythonPackages.dateutil_1_5;
   };
 
-  buildbotSlave = callPackage ../development/tools/build-managers/buildbot-slave {
+  buildbot-slave = callPackage ../development/tools/build-managers/buildbot-slave {
     inherit (pythonPackages) twisted;
   };
 
   byacc = callPackage ../development/tools/parsing/byacc { };
+
+  cargoSnapshot = callPackage ../development/tools/build-managers/cargo/snapshot.nix { };
 
   casperjs = callPackage ../development/tools/casperjs { };
 
@@ -3803,6 +4602,8 @@ let
 
   chrpath = callPackage ../development/tools/misc/chrpath { };
 
+  chruby = callPackage ../development/tools/misc/chruby { rubies = null; };
+
   "cl-launch" = callPackage ../development/tools/misc/cl-launch {};
 
   complexity = callPackage ../development/tools/misc/complexity { };
@@ -3813,8 +4614,11 @@ let
     inherit pkgs ctags writeScriptBin;
   };
 
+  ctodo = callPackage ../applications/misc/ctodo { };
+
   cmake = callPackage ../development/tools/build-managers/cmake { };
 
+  cmake-3_0 = callPackage ../development/tools/build-managers/cmake/3.0.nix { };
   cmake264 = callPackage ../development/tools/build-managers/cmake/264.nix { };
 
   cmakeCurses = cmake.override { useNcurses = true; };
@@ -3850,7 +4654,6 @@ let
 
   dfeet = callPackage ../development/tools/misc/d-feet {
     inherit (pythonPackages) pep8;
-    inherit (gnome3) gnome_icon_theme;
   };
 
   dfu-programmer = callPackage ../development/tools/misc/dfu-programmer { };
@@ -3876,10 +4679,12 @@ let
      wrapGCC (distcc.links extraConfig)) {};
   distccStdenv = lowPrio (overrideGCC stdenv distccWrapper);
 
-  distccMasquerade = callPackage ../development/tools/misc/distcc/masq.nix {
-    gccRaw = gcc.gcc;
-    binutils = binutils;
-  };
+  distccMasquerade = if stdenv.isDarwin
+    then null
+    else callPackage ../development/tools/misc/distcc/masq.nix {
+      gccRaw = gcc.gcc;
+      binutils = binutils;
+    };
 
   docutils = builderDefsPackage (import ../development/tools/documentation/docutils) {
     inherit python pil makeWrapper;
@@ -3901,7 +4706,13 @@ let
 
   emma = callPackage ../development/tools/analysis/emma { };
 
+  eztrace = callPackage ../development/tools/profiling/EZTrace { };
+
   findbugs = callPackage ../development/tools/analysis/findbugs { };
+
+  flow = callPackage ../development/tools/analysis/flow { };
+
+  fswatch = callPackage ../development/tools/misc/fswatch { };
 
   pmd = callPackage ../development/tools/analysis/pmd { };
 
@@ -3924,7 +4735,8 @@ let
   gnumake380 = callPackage ../development/tools/build-managers/gnumake/3.80 { };
   gnumake381 = callPackage ../development/tools/build-managers/gnumake/3.81 { };
   gnumake382 = callPackage ../development/tools/build-managers/gnumake/3.82 { };
-  gnumake40  = callPackage ../development/tools/build-managers/gnumake/4.0  { };
+  gnumake40 = callPackage ../development/tools/build-managers/gnumake/4.0 { };
+  gnumake41 = callPackage ../development/tools/build-managers/gnumake/4.1 { };
   gnumake = gnumake382;
 
   gob2 = callPackage ../development/tools/misc/gob2 { };
@@ -3949,6 +4761,8 @@ let
 
   ibus = callPackage ../development/libraries/ibus { };
 
+  icmake = callPackage ../development/tools/build-managers/icmake { };
+
   iconnamingutils = callPackage ../development/tools/misc/icon-naming-utils {
     inherit (perlPackages) XMLSimple;
   };
@@ -3959,7 +4773,9 @@ let
 
   inotifyTools = callPackage ../development/tools/misc/inotify-tools { };
 
-  intelgen4asm = callPackage ../development/misc/intelgen4asm { };
+  intel-gpu-tools = callPackage ../development/tools/misc/intel-gpu-tools {
+    inherit (xorg) libpciaccess dri2proto libX11 libXext libXv libXrandr;
+  };
 
   ired = callPackage ../development/tools/analysis/radare/ired.nix { };
 
@@ -3985,21 +4801,39 @@ let
 
   ltrace = callPackage ../development/tools/misc/ltrace { };
 
-  lttngTools = callPackage ../development/tools/misc/lttng-tools { };
+  lttng-tools = callPackage ../development/tools/misc/lttng-tools { };
 
-  lttngUst = callPackage ../development/tools/misc/lttng-ust { };
+  lttng-ust = callPackage ../development/tools/misc/lttng-ust { };
 
   lttv = callPackage ../development/tools/misc/lttv { };
+
+  maven = maven3;
+  maven3 = callPackage ../development/tools/build-managers/apache-maven { };
 
   mk = callPackage ../development/tools/build-managers/mk { };
 
   neoload = callPackage ../development/tools/neoload {
     licenseAccepted = (config.neoload.accept_license or false);
+    fontsConf = makeFontsConf {
+      fontDirectories = [
+        xorg.fontbhttf
+      ];
+    };
   };
 
   ninja = callPackage ../development/tools/build-managers/ninja { };
 
-  node_webkit = callPackage ../development/tools/node-webkit {
+  nixbang = callPackage ../development/tools/misc/nixbang {
+      pythonPackages = python3Packages;
+  };
+
+  node_webkit = node_webkit_0_9;
+
+  node_webkit_0_11 = callPackage ../development/tools/node-webkit/nw11.nix {
+    gconf = pkgs.gnome.GConf;
+  };
+
+  node_webkit_0_9 = callPackage ../development/tools/node-webkit/nw9.nix {
     gconf = pkgs.gnome.GConf;
   };
 
@@ -4035,13 +4869,18 @@ let
   pkgconfig = forceNativeDrv (callPackage ../development/tools/misc/pkgconfig { });
   pkgconfigUpstream = lowPrio (pkgconfig.override { vanilla = true; });
 
+  prelink = callPackage ../development/tools/misc/prelink { };
+
   premake3 = callPackage ../development/tools/misc/premake/3.nix { };
 
   premake4 = callPackage ../development/tools/misc/premake { };
 
   premake = premake4;
 
-  pstack = callPackage ../development/tools/misc/gdb/pstack.nix { };
+  racerRust = callPackage ../development/tools/rust/racer {
+    rustc = rustcMaster;
+    cargo = cargoSnapshot;
+  };
 
   radare = callPackage ../development/tools/analysis/radare {
     inherit (gnome) vte;
@@ -4051,12 +4890,25 @@ let
     rubyBindings = config.radare.rubyBindings or false;
     luaBindings = config.radare.luaBindings or false;
   };
+  radare2 = callPackage ../development/tools/analysis/radare2 {
+    inherit (gnome) vte;
+    lua = lua5;
+    useX11 = config.radare.useX11 or false;
+    pythonBindings = config.radare.pythonBindings or false;
+    rubyBindings = config.radare.rubyBindings or false;
+    luaBindings = config.radare.luaBindings or false;
+  };
+
 
   ragel = callPackage ../development/tools/parsing/ragel { };
+
+  hammer = callPackage ../development/tools/parsing/hammer { };
 
   re2c = callPackage ../development/tools/parsing/re2c { };
 
   remake = callPackage ../development/tools/build-managers/remake { };
+
+  rr = callPackage ../development/tools/analysis/rr { };
 
   saleae-logic = callPackage ../development/tools/misc/saleae-logic { };
 
@@ -4067,15 +4919,22 @@ let
 
   selenium-server-standalone = callPackage ../development/tools/selenium/server { };
 
+  selendroid = callPackage ../development/tools/selenium/selendroid { };
+
   scons = callPackage ../development/tools/build-managers/scons { };
 
-  simpleBuildTool = callPackage ../development/tools/build-managers/simple-build-tool { };
+  sbt = callPackage ../development/tools/build-managers/sbt { };
+  simpleBuildTool = sbt;
 
   sigrok-cli = callPackage ../development/tools/sigrok-cli { };
+
+  simpleTpmPk11 = callPackage ../tools/security/simple-tpm-pk11 { };
 
   slimerjs = callPackage ../development/tools/slimerjs {};
 
   sloccount = callPackage ../development/tools/misc/sloccount { };
+
+  sloc = callPackage ../development/tools/sloc { };
 
   smatch = callPackage ../development/tools/analysis/smatch {
     buildllvmsparse = false;
@@ -4090,7 +4949,11 @@ let
 
   spin = callPackage ../development/tools/analysis/spin { };
 
-  splint = callPackage ../development/tools/analysis/splint { };
+  splint = callPackage ../development/tools/analysis/splint {
+    flex = flex_2_5_35;
+  };
+
+  sselp = callPackage ../tools/X11/sselp{ };
 
   stm32flash = callPackage ../development/tools/misc/stm32flash { };
 
@@ -4128,13 +4991,17 @@ let
 
   uncrustify = callPackage ../development/tools/misc/uncrustify { };
 
-  vagrant = callPackage ../development/tools/vagrant { };
+  vagrant = callPackage ../development/tools/vagrant {
+    ruby = ruby_2_0_0;
+  };
 
   gdb = callPackage ../development/tools/misc/gdb {
+    guile = null;
     hurd = gnu.hurdCross;
-    readline = readline63;
     inherit (gnu) mig;
   };
+
+  gdbGuile = lowPrio (gdb.override { inherit guile; });
 
   gdbCross = lowPrio (callPackage ../development/tools/misc/gdb {
     target = crossSystem;
@@ -4165,6 +5032,10 @@ let
 
   yodl = callPackage ../development/tools/misc/yodl { };
 
+  winpdb = callPackage ../development/tools/winpdb { };
+
+  grabserial = callPackage ../development/tools/grabserial { };
+
 
   ### DEVELOPMENT / LIBRARIES
 
@@ -4182,22 +5053,30 @@ let
 
   adns = callPackage ../development/libraries/adns { };
 
-  afflib = callPackage ../development/libraries/afflib {};
+  afflib = callPackage ../development/libraries/afflib {
+    automake = automake114x;
+  };
 
   agg = callPackage ../development/libraries/agg { };
 
   allegro = callPackage ../development/libraries/allegro {};
   allegro5 = callPackage ../development/libraries/allegro/5.nix {};
+  allegro5unstable = callPackage
+    ../development/libraries/allegro/5-unstable.nix {};
 
   amrnb = callPackage ../development/libraries/amrnb { };
 
   amrwb = callPackage ../development/libraries/amrwb { };
+
+  appstream = callPackage ../development/libraries/appstream { };
 
   apr = callPackage ../development/libraries/apr { };
 
   aprutil = callPackage ../development/libraries/apr-util {
     bdbSupport = true;
   };
+
+  assimp = callPackage ../development/libraries/assimp { };
 
   asio = callPackage ../development/libraries/asio { };
 
@@ -4217,19 +5096,15 @@ let
 
   attr = callPackage ../development/libraries/attr { };
 
+  at_spi2_core = callPackage ../development/libraries/at-spi2-core { };
+
+  at_spi2_atk = callPackage ../development/libraries/at-spi2-atk { };
+
   aqbanking = callPackage ../development/libraries/aqbanking { };
 
   aubio = callPackage ../development/libraries/aubio { };
 
-  audiofile = callPackage ../development/libraries/audiofile {
-    stdenv = if stdenv.isDarwin
-      then overrideGCC stdenv gccApple
-      else stdenv;
-  };
-
-  axis = callPackage ../development/libraries/axis { };
-
-  babl_0_0_22 = callPackage ../development/libraries/babl/0_0_22.nix { };
+  audiofile = callPackage ../development/libraries/audiofile { };
 
   babl = callPackage ../development/libraries/babl { };
 
@@ -4239,14 +5114,15 @@ let
 
   boolstuff = callPackage ../development/libraries/boolstuff { };
 
-  boost144 = callPackage ../development/libraries/boost/1.44.nix { };
-  boost149 = callPackage ../development/libraries/boost/1.49.nix { };
   boost155 = callPackage ../development/libraries/boost/1.55.nix { };
-  boost = boost155;
+  boost156 = callPackage ../development/libraries/boost/1.56.nix { };
+  boost157 = callPackage ../development/libraries/boost/1.57.nix { };
+  boost = boost157;
 
-  boostHeaders = callPackage ../development/libraries/boost/header-only-wrapper.nix { };
+  boost_process = callPackage ../development/libraries/boost-process { };
 
   botan = callPackage ../development/libraries/botan { };
+  botanUnstable = callPackage ../development/libraries/botan/unstable.nix { };
 
   box2d = callPackage ../development/libraries/box2d { };
   box2d_2_0_1 = callPackage ../development/libraries/box2d/2.0.1.nix { };
@@ -4262,6 +5138,12 @@ let
   caelum = callPackage ../development/libraries/caelum { };
 
   capnproto = callPackage ../development/libraries/capnproto { };
+
+  ccnx = callPackage ../development/libraries/ccnx { };
+
+  ndn-cxx = callPackage ../development/libraries/ndn-cxx { };
+
+  cimg = callPackage  ../development/libraries/cimg { };
 
   scmccid = callPackage ../development/libraries/scmccid { };
 
@@ -4286,8 +5168,6 @@ let
   chmlib = callPackage ../development/libraries/chmlib { };
 
   chromaprint = callPackage ../development/libraries/chromaprint { };
-
-  cil = callPackage ../development/libraries/cil { };
 
   cilaterm = callPackage ../development/libraries/cil-aterm {
     stdenv = overrideInStdenv stdenv [gnumake380];
@@ -4340,15 +5220,11 @@ let
 
   coredumper = callPackage ../development/libraries/coredumper { };
 
-  ctl = callPackage ../development/libraries/ctl { };
+  ctl = dropCxx (callPackage ../development/libraries/ctl { });
 
   cpp-netlib = callPackage ../development/libraries/cpp-netlib { };
 
   cppunit = callPackage ../development/libraries/cppunit { };
-
-  cppnetlib = callPackage ../development/libraries/cppnetlib {
-    boost = boostHeaders;
-  };
 
   cracklib = callPackage ../development/libraries/cracklib { };
 
@@ -4373,7 +5249,9 @@ let
   dbus_cplusplus  = callPackage ../development/libraries/dbus-cplusplus { };
   dbus_glib       = callPackage ../development/libraries/dbus-glib { };
   dbus_java       = callPackage ../development/libraries/java/dbus-java { };
-  dbus_python     = callPackage ../development/python-modules/dbus { };
+  dbus_python     = callPackage ../development/python-modules/dbus {
+    isPyPy = python.executable == "pypy";
+  };
 
   # Should we deprecate these? Currently there are many references.
   dbus_tools = pkgs.dbus.tools;
@@ -4382,6 +5260,8 @@ let
 
   dhex = callPackage ../applications/editors/dhex { };
 
+  double_conversion = callPackage ../development/libraries/double-conversion { };
+
   dclib = callPackage ../development/libraries/dclib { };
 
   dillo = callPackage ../applications/networking/browsers/dillo {
@@ -4389,6 +5269,8 @@ let
   };
 
   directfb = callPackage ../development/libraries/directfb { };
+
+  dlib = callPackage ../development/libraries/dlib { };
 
   dotconf = callPackage ../development/libraries/dotconf { };
 
@@ -4408,17 +5290,17 @@ let
 
   enginepkcs11 = callPackage ../development/libraries/enginepkcs11 { };
 
+  epoxy = callPackage ../development/libraries/epoxy {
+    inherit (xorg) utilmacros libX11;
+  };
+
   esdl = callPackage ../development/libraries/esdl { };
 
   exiv2 = callPackage ../development/libraries/exiv2 { };
 
   expat = callPackage ../development/libraries/expat { };
 
-  extremetuxracer = builderDefsPackage (import ../games/extremetuxracer) {
-    inherit mesa tcl freeglut SDL SDL_mixer pkgconfig
-      gettext intltool;
-    inherit (xlibs) libX11 xproto libXi inputproto
-      libXmu libXext xextproto libXt libSM libICE;
+  extremetuxracer = callPackage ../games/extremetuxracer {
     libpng = libpng12;
   };
 
@@ -4460,6 +5342,8 @@ let
     vpxSupport = !stdenv.isMips;
   };
 
+  ffmpeg_2_2 = callPackage ../development/libraries/ffmpeg/2.2.x.nix { };
+
   ffmpeg_2 = callPackage ../development/libraries/ffmpeg/2.x.nix { };
 
   ffmpeg = ffmpeg_2;
@@ -4469,6 +5353,8 @@ let
   fftw = callPackage ../development/libraries/fftw { };
   fftwSinglePrec = fftw.override { precision = "single"; };
   fftwFloat = fftwSinglePrec; # the configure option is just an alias
+
+  fish-fillets-ng = callPackage ../games/fish-fillets-ng {};
 
   flann = callPackage ../development/libraries/flann { };
 
@@ -4486,19 +5372,27 @@ let
 
   cfitsio = callPackage ../development/libraries/cfitsio { };
 
+  fontconfig_210 = callPackage ../development/libraries/fontconfig/2.10.nix { };
+
   fontconfig = callPackage ../development/libraries/fontconfig { };
+
+  fontconfig-ultimate = callPackage ../development/libraries/fontconfig-ultimate {};
+
+  folly = callPackage ../development/libraries/folly { };
 
   makeFontsConf = let fontconfig_ = fontconfig; in {fontconfig ? fontconfig_, fontDirectories}:
     import ../development/libraries/fontconfig/make-fonts-conf.nix {
       inherit runCommand libxslt fontconfig fontDirectories;
+      inherit (xorg) fontbhttf;
     };
 
   freealut = callPackage ../development/libraries/freealut { };
 
-  freeglut = if stdenv.isDarwin then darwinX11AndOpenGL else
-    callPackage ../development/libraries/freeglut { };
+  freeglut = callPackage ../development/libraries/freeglut { };
 
   freetype = callPackage ../development/libraries/freetype { };
+
+  frei0r = callPackage ../development/libraries/frei0r { };
 
   fribidi = callPackage ../development/libraries/fribidi { };
 
@@ -4520,14 +5414,9 @@ let
 
   gdbm = callPackage ../development/libraries/gdbm { };
 
-  gegl = callPackage ../development/libraries/gegl {
-    #  avocodec avformat librsvg
-  };
+  gecode = callPackage ../development/libraries/gecode { };
 
-  gegl_0_0_22 = callPackage ../development/libraries/gegl/0_0_22.nix {
-    #  avocodec avformat librsvg
-    libpng = libpng12;
-  };
+  gegl = callPackage ../development/libraries/gegl { };
 
   geoclue = callPackage ../development/libraries/geoclue {};
 
@@ -4539,14 +5428,19 @@ let
 
   geos = callPackage ../development/libraries/geos { };
 
+  getdata = callPackage ../development/libraries/getdata { };
+
   gettext = gettext_0_18;
 
   gettext_0_17 = callPackage ../development/libraries/gettext/0.17.nix { };
   gettext_0_18 = callPackage ../development/libraries/gettext { };
+  gettext_0_19 = callPackage ../development/libraries/gettext/0.19.nix { };
 
   gd = callPackage ../development/libraries/gd { };
 
   gdal = callPackage ../development/libraries/gdal { };
+
+  gdcm = callPackage ../development/libraries/gdcm { };
 
   ggz_base_libs = callPackage ../development/libraries/ggz_base_libs {};
 
@@ -4560,7 +5454,7 @@ let
   glfw2 = callPackage ../development/libraries/glfw/2.x.nix { };
   glfw3 = callPackage ../development/libraries/glfw/3.x.nix { };
 
-  glibc = callPackage ../development/libraries/glibc/2.19 {
+  glibc = callPackage ../development/libraries/glibc {
     kernelHeaders = linuxHeaders;
     installLocales = config.glibc.locales or false;
     machHeaders = null;
@@ -4568,13 +5462,13 @@ let
     gccCross = null;
   };
 
-  glibc_memusage = callPackage ../development/libraries/glibc/2.19 {
+  glibc_memusage = callPackage ../development/libraries/glibc {
     kernelHeaders = linuxHeaders;
     installLocales = false;
     withGd = true;
   };
 
-  glibcCross = forceNativeDrv (makeOverridable (import ../development/libraries/glibc/2.19)
+  glibcCross = forceNativeDrv (makeOverridable (import ../development/libraries/glibc)
     (let crossGNU = crossSystem != null && crossSystem.config == "i586-pc-gnu";
      in {
        inherit stdenv fetchurl;
@@ -4602,57 +5496,40 @@ let
     installLocales = config.glibc.locales or false;
   };
 
-  glibcLocales = callPackage ../development/libraries/glibc/2.19/locales.nix { };
+  # Only supported on Linux
+  glibcLocales = if stdenv.isLinux then callPackage ../development/libraries/glibc/locales.nix { } else null;
 
-  glibcInfo = callPackage ../development/libraries/glibc/2.19/info.nix { };
+  glibcInfo = callPackage ../development/libraries/glibc/info.nix { };
 
-  glibc_multi =
-    runCommand "${glibc.name}-multi"
-      { glibc64 = glibc;
-        glibc32 = (import ./all-packages.nix {system = "i686-linux";}).glibc;
-      }
-      ''
-        mkdir -p $out
-        ln -s $glibc64/* $out/
-
-        rm $out/lib $out/lib64
-        mkdir -p $out/lib
-        ln -s $glibc64/lib/* $out/lib
-        ln -s $glibc32/lib $out/lib/32
-        ln -s lib $out/lib64
-
-        rm $out/include
-        cp -rs $glibc32/include $out
-        chmod -R u+w $out/include
-        cp -rsf $glibc64/include $out
-      '' # */
-      ;
+  glibc_multi = callPackage ../development/libraries/glibc/multi.nix {
+    inherit glibc;
+    glibc32 = (import ./all-packages.nix {system = "i686-linux";}).glibc;
+  };
 
   glm = callPackage ../development/libraries/glm { };
+  glm_0954 = callPackage ../development/libraries/glm/0954.nix { };
 
   glog = callPackage ../development/libraries/glog { };
+
+  gloox = callPackage ../development/libraries/gloox { };
 
   glpk = callPackage ../development/libraries/glpk { };
 
   glsurf = callPackage ../applications/science/math/glsurf {
-    inherit (ocamlPackages) lablgl findlib camlimages ocaml_mysql mlgmp;
+    inherit (ocamlPackages) lablgl findlib ocaml_mysql mlgmp;
     libpng = libpng12;
     giflib = giflib_4_1;
+    camlimages = ocamlPackages.camlimages_4_0;
   };
 
   gmime = callPackage ../development/libraries/gmime { };
 
   gmm = callPackage ../development/libraries/gmm { };
 
+  gmp4 = callPackage ../development/libraries/gmp/4.3.2.nix { }; # required by older GHC versions
+  gmp5 = callPackage ../development/libraries/gmp/5.1.x.nix { };
   gmp = gmp5;
-  gmp5 = gmp51;
-
   gmpxx = appendToName "with-cxx" (gmp.override { cxx = true; });
-
-  # The GHC bootstrap binaries link against libgmp.so.3, which is in GMP 4.x.
-  gmp4 = callPackage ../development/libraries/gmp/4.3.2.nix { };
-
-  gmp51 = callPackage ../development/libraries/gmp/5.1.x.nix { };
 
   #GMP ex-satellite, so better keep it near gmp
   mpfr = callPackage ../development/libraries/mpfr/default.nix { };
@@ -4666,7 +5543,7 @@ let
   gperftools = callPackage ../development/libraries/gperftools { };
 
   gst_all_1 = recurseIntoAttrs(callPackage ../development/libraries/gstreamer {
-    callPackage = pkgs.newScope (pkgs // { libav = pkgs.libav_9; });
+    callPackage = pkgs.newScope (pkgs // { inherit (pkgs) libav; });
   });
 
   gst_all = {
@@ -4706,15 +5583,13 @@ let
 
   qt_gstreamer = callPackage ../development/libraries/gstreamer/legacy/qt-gstreamer {};
 
+  qt_gstreamer1 = callPackage ../development/libraries/gstreamer/qt-gstreamer { boost = boost156;};
+
   gnet = callPackage ../development/libraries/gnet { };
 
   gnu-efi = callPackage ../development/libraries/gnu-efi { };
 
   gnutls = gnutls32;
-
-  gnutls31 = callPackage ../development/libraries/gnutls/3.1.nix {
-    guileBindings = config.gnutls.guile or false;
-  };
 
   gnutls32 = callPackage ../development/libraries/gnutls/3.2.nix {
     guileBindings = config.gnutls.guile or false;
@@ -4749,11 +5624,7 @@ let
       gtkmm;
   };
 
-  glib = callPackage ../development/libraries/glib {
-    stdenv = if stdenv.isDarwin
-      then overrideGCC stdenv gccApple
-      else stdenv;
-  };
+  glib = callPackage ../development/libraries/glib { };
   glib-tested = glib.override { doCheck = true; }; # checked version separate to break cycles
   glibmm = callPackage ../development/libraries/glibmm { };
 
@@ -4782,13 +5653,15 @@ let
       else stdenv;
   };
 
+  gnome-sharp = callPackage ../development/libraries/gnome-sharp {};
+
+  granite = callPackage ../development/libraries/granite { };
+
   gtk2 = callPackage ../development/libraries/gtk+/2.x.nix {
     cupsSupport = config.gtk2.cups or stdenv.isLinux;
   };
 
-  gtk3 = callPackage ../development/libraries/gtk+/3.x.nix {
-    inherit (gnome3) at_spi2_atk;
-  };
+  gtk3 = callPackage ../development/libraries/gtk+/3.x.nix { };
 
   gtk = pkgs.gtk2;
 
@@ -4796,29 +5669,20 @@ let
   gtkmm3 = callPackage ../development/libraries/gtkmm/3.x.nix { };
 
   gtkmozembedsharp = callPackage ../development/libraries/gtkmozembed-sharp {
-    gtksharp = gtksharp2;
+    gtksharp = gtk-sharp;
   };
 
-  gtksharp1 = callPackage ../development/libraries/gtk-sharp-1 {
-    inherit (gnome) libglade libgtkhtml gtkhtml
-              libgnomecanvas libgnomeui libgnomeprint
-              libgnomeprintui GConf;
-  };
-
-  gtksharp2 = callPackage ../development/libraries/gtk-sharp-2 {
+  gtk-sharp = callPackage ../development/libraries/gtk-sharp-2 {
     inherit (gnome) libglade libgtkhtml gtkhtml
               libgnomecanvas libgnomeui libgnomeprint
               libgnomeprintui GConf gnomepanel;
   };
 
-  gtksourceviewsharp = callPackage ../development/libraries/gtksourceview-sharp {
-    inherit (gnome) gtksourceview;
-    gtksharp = gtksharp2;
-  };
-
   gtkspell = callPackage ../development/libraries/gtkspell { };
 
   gtkspell3 = callPackage ../development/libraries/gtkspell/3.nix { };
+
+  gtkspellmm = callPackage ../development/libraries/gtkspellmm { };
 
   gts = callPackage ../development/libraries/gts { };
 
@@ -4829,15 +5693,33 @@ let
   hamlib = callPackage ../development/libraries/hamlib { };
 
   # TODO : Add MIT Kerberos and let admin choose.
-  kerberos = heimdal;
+  # TODO : Fix kerberos on Darwin
+  kerberos = if stdenv.isDarwin then null else heimdal;
 
-  heimdal = callPackage ../development/libraries/kerberos/heimdal.nix { };
+  heimdal = callPackage ../development/libraries/kerberos/heimdal.nix {
+    openldap = openldap.override {
+      cyrus_sasl = cyrus_sasl.override { kerberos = null; };
+    };
+    cyrus_sasl = cyrus_sasl.override { kerberos = null; };
+  };
 
   harfbuzz = callPackage ../development/libraries/harfbuzz { };
+  harfbuzz-icu = callPackage ../development/libraries/harfbuzz {
+    withIcu = true;
+    withGraphite2 = true;
+  };
 
   hawknl = callPackage ../development/libraries/hawknl { };
 
   herqq = callPackage ../development/libraries/herqq { };
+
+  hidapi = callPackage ../development/libraries/hidapi {
+    libusb = libusb1;
+  };
+
+  hivex = callPackage ../development/libraries/hivex {
+    inherit (perlPackages) IOStringy;
+  };
 
   hspell = callPackage ../development/libraries/hspell { };
 
@@ -4865,7 +5747,7 @@ let
 
   ilixi = callPackage ../development/libraries/ilixi { };
 
-  ilmbase = callPackage ../development/libraries/ilmbase { };
+  ilmbase = dropCxx (callPackage ../development/libraries/ilmbase { });
 
   imlib = callPackage ../development/libraries/imlib {
     libpng = libpng12;
@@ -4873,9 +5755,13 @@ let
 
   imlib2 = callPackage ../development/libraries/imlib2 { };
 
+  ijs = callPackage ../development/libraries/ijs { };
+
   incrtcl = callPackage ../development/libraries/incrtcl { };
 
   indilib = callPackage ../development/libraries/indilib { };
+
+  indilib_0_9_9 = callPackage ../development/libraries/indilib/0_9_9.nix { };
 
   iniparser = callPackage ../development/libraries/iniparser { };
 
@@ -4919,13 +5805,33 @@ let
     lua = lua5_1;
   };
 
-  krb5 = callPackage ../development/libraries/kerberos/krb5.nix { };
+  keybinder3 = callPackage ../development/libraries/keybinder3 {
+    automake = automake111x;
+  };
+
+  kf55 = recurseIntoAttrs (callPackage ../development/libraries/kde-frameworks-5.5 {
+    stdenv = overrideGCC stdenv gccStdInc;
+  });
+  kf5_latest = kf55;
+  kf5_stable = kf55;
+
+  krb5 = callPackage ../development/libraries/kerberos/krb5.nix {
+    openldap = openldap.override {
+      cyrus_sasl = cyrus_sasl.override { kerberos = null; };
+    };
+  };
+
+  LASzip = callPackage ../development/libraries/LASzip { };
 
   lcms = lcms1;
 
   lcms1 = callPackage ../development/libraries/lcms { };
 
   lcms2 = callPackage ../development/libraries/lcms2 { };
+
+  ldb = callPackage ../development/libraries/ldb {
+    python = python2;
+  };
 
   lensfun = callPackage ../development/libraries/lensfun { };
 
@@ -4941,10 +5847,6 @@ let
     libpng = libpng12;
   };
 
-  lgi = callPackage ../development/libraries/lgi {
-    lua = lua5_1;
-  };
-
   lib3ds = callPackage ../development/libraries/lib3ds { };
 
   libaacs = callPackage ../development/libraries/libaacs { };
@@ -4954,6 +5856,8 @@ let
   libao = callPackage ../development/libraries/libao {
     usePulseAudio = config.pulseaudio or true;
   };
+
+  libantlr3c = callPackage ../development/libraries/libantlr3c {};
 
   libarchive = callPackage ../development/libraries/libarchive { };
 
@@ -4967,9 +5871,9 @@ let
 
   libatomic_ops = callPackage ../development/libraries/libatomic_ops {};
 
-  libav = libav_10;
+  libav = libav_11; # branch 11 is API-compatible with branch 10
   libav_all = callPackage ../development/libraries/libav { };
-  inherit (libav_all) libav_0_8 libav_9 libav_10;
+  inherit (libav_all) libav_0_8 libav_9 libav_11;
 
   libavc1394 = callPackage ../development/libraries/libavc1394 { };
 
@@ -4987,6 +5891,8 @@ let
     then libcanberra.override { gtk = null; }
     else libcanberra;
 
+  libcec = callPackage ../development/libraries/libcec { };
+
   libcello = callPackage ../development/libraries/libcello {};
 
   libcdaudio = callPackage ../development/libraries/libcdaudio { };
@@ -5002,9 +5908,13 @@ let
     inherit (gnome) libsoup;
   };
 
-  libchamplain_0_6 = callPackage ../development/libraries/libchamplain/0.6.nix {};
+  libchardet = callPackage ../development/libraries/libchardet { };
+
+  libuchardet = callPackage ../development/libraries/libuchardet { };
 
   libchop = callPackage ../development/libraries/libchop { };
+
+  libcli = callPackage ../development/libraries/libcli { };
 
   libcm = callPackage ../development/libraries/libcm { };
 
@@ -5012,7 +5922,11 @@ let
 
   libcangjie = callPackage ../development/libraries/libcangjie { };
 
+  libcredis = callPackage ../development/libraries/libcredis { };
+
   libctemplate = callPackage ../development/libraries/libctemplate { };
+
+  libcouchbase = callPackage ../development/libraries/libcouchbase { };
 
   libcue = callPackage ../development/libraries/libcue { };
 
@@ -5030,12 +5944,13 @@ let
   };
 
   libdbusmenu_qt = callPackage ../development/libraries/libdbusmenu-qt { };
+  libdbusmenu_qt5 = callPackage ../development/libraries/libdbusmenu-qt/qt5.nix {};
 
   libdc1394 = callPackage ../development/libraries/libdc1394 { };
 
   libdc1394avt = callPackage ../development/libraries/libdc1394avt { };
 
-  libdevil = callPackage ../development/libraries/libdevil { };
+  libdevil = dropCxx (callPackage ../development/libraries/libdevil { });
 
   libdiscid = callPackage ../development/libraries/libdiscid { };
 
@@ -5072,7 +5987,20 @@ let
 
   libelf = callPackage ../development/libraries/libelf { };
 
+  libetpan = callPackage ../development/libraries/libetpan { };
+
+  libfaketime = callPackage ../development/libraries/libfaketime { };
+
+  libfakekey = callPackage ../development/libraries/libfakekey {
+    inherit (xlibs) libX11 libXi xextproto;
+  };
+
   libfm = callPackage ../development/libraries/libfm { };
+  libfm-extra = callPackage ../development/libraries/libfm {
+    extraOnly = true;
+  };
+
+  libfprint = callPackage ../development/libraries/libfprint/master.nix { };
 
   libgadu = callPackage ../development/libraries/libgadu { };
 
@@ -5093,6 +6021,8 @@ let
 
   libgtop = callPackage ../development/libraries/libgtop {};
 
+  libLAS = callPackage ../development/libraries/libLAS { };
+
   liblo = callPackage ../development/libraries/liblo { };
 
   liblrdf = librdf;
@@ -5100,7 +6030,8 @@ let
   liblscp = callPackage ../development/libraries/liblscp { };
 
   libe-book = callPackage ../development/libraries/libe-book {};
-  libe-book_00 = callPackage ../development/libraries/libe-book/0.0.nix {};
+
+  libechonest = callPackage ../development/libraries/libechonest { };
 
   libev = builderDefsPackage ../development/libraries/libev { };
 
@@ -5135,6 +6066,8 @@ let
 
   libffi = callPackage ../development/libraries/libffi { };
 
+  libfreefare = callPackage ../development/libraries/libfreefare { };
+
   libftdi = callPackage ../development/libraries/libftdi { };
 
   libftdi1 = callPackage ../development/libraries/libftdi/1.x.nix { };
@@ -5145,17 +6078,29 @@ let
 
   libgdiplus = callPackage ../development/libraries/libgdiplus { };
 
+  libgksu = callPackage ../development/libraries/libgksu { };
+
   libgpgerror = callPackage ../development/libraries/libgpg-error { };
 
   libgphoto2 = callPackage ../development/libraries/libgphoto2 { };
-
-  libgphoto2_4 = callPackage ../development/libraries/libgphoto2/2.4.nix { };
 
   libgpod = callPackage ../development/libraries/libgpod {
     inherit (pkgs.pythonPackages) mutagen;
   };
 
+  libgsystem = callPackage ../development/libraries/libgsystem { };
+
+  libguestfs = callPackage ../development/libraries/libguestfs {
+    inherit (perlPackages) libintlperl GetoptLong SysVirt;
+  };
+
   libharu = callPackage ../development/libraries/libharu { };
+
+  libHX = callPackage ../development/libraries/libHX { };
+
+  libibmad = callPackage ../development/libraries/libibmad { };
+
+  libibumad = callPackage ../development/libraries/libibumad { };
 
   libical = callPackage ../development/libraries/libical { };
 
@@ -5167,6 +6112,8 @@ let
     useGTK = config.libiodbc.gtk or false;
   };
 
+  libivykis = callPackage ../development/libraries/libivykis { };
+
   liblastfmSF = callPackage ../development/libraries/liblastfmSF { };
 
   liblastfm = callPackage ../development/libraries/liblastfm { };
@@ -5175,7 +6122,13 @@ let
 
   liblockfile = callPackage ../development/libraries/liblockfile { };
 
+  liblogging = callPackage ../development/libraries/liblogging { };
+
+  libltc = callPackage ../development/libraries/libltc { };
+
   libmcrypt = callPackage ../development/libraries/libmcrypt {};
+
+  libmediainfo = callPackage ../development/libraries/libmediainfo { };
 
   libmhash = callPackage ../development/libraries/libmhash {};
 
@@ -5186,6 +6139,10 @@ let
   libmsgpack = callPackage ../development/libraries/libmsgpack { };
 
   libnatspec = callPackage ../development/libraries/libnatspec { };
+
+  libndp = callPackage ../development/libraries/libndp { };
+
+  libnfc = callPackage ../development/libraries/libnfc { };
 
   libnfsidmap = callPackage ../development/libraries/libnfsidmap { };
 
@@ -5206,11 +6163,9 @@ let
 
   librevisa = callPackage ../development/libraries/librevisa { };
 
-  libsamplerate = callPackage ../development/libraries/libsamplerate {
-    stdenv = if stdenv.isDarwin
-      then overrideGCC stdenv gccApple
-      else stdenv;
-  };
+  libsamplerate = callPackage ../development/libraries/libsamplerate { };
+
+  libsieve = callPackage ../development/libraries/libsieve { };
 
   libspectre = callPackage ../development/libraries/libspectre { };
 
@@ -5221,14 +6176,14 @@ let
   libiconvOrEmpty = if libiconvOrNull == null then [] else [libiconv];
 
   libiconvOrNull =
-    if gcc.libc or null != null || stdenv.isGlibc
+    if stdenv.cc.libc or null != null || stdenv.isGlibc
     then null
     else libiconv;
 
   # The logic behind this attribute is broken: libiconvOrNull==null does
   # NOT imply libiconv=glibc! On Darwin, for example, we have a native
   # libiconv library which is not glibc.
-  libiconvOrLibc = if libiconvOrNull == null then gcc.libc else libiconv;
+  libiconvOrLibc = if libiconvOrNull == null then stdenv.cc.libc else libiconv;
 
   # On non-GNU systems we need GNU Gettext for libintl.
   libintlOrEmpty = stdenv.lib.optional (!stdenv.isLinux) gettext;
@@ -5254,6 +6209,8 @@ let
   libjpeg62 = callPackage ../development/libraries/libjpeg/62.nix {
     libtool = libtool_1_5;
   };
+
+  libjreen = callPackage ../development/libraries/libjreen { };
 
   libjson_rpc_cpp = callPackage ../development/libraries/libjson-rpc-cpp { };
 
@@ -5298,6 +6255,8 @@ let
 
   libmpcdec = callPackage ../development/libraries/libmpcdec { };
 
+  libmp3splt = callPackage ../development/libraries/libmp3splt { };
+
   libmrss = callPackage ../development/libraries/libmrss { };
 
   libmsn = callPackage ../development/libraries/libmsn { };
@@ -5315,7 +6274,6 @@ let
   libmusicbrainz = libmusicbrainz3;
 
   libmwaw = callPackage ../development/libraries/libmwaw { };
-  libmwaw_02 = callPackage ../development/libraries/libmwaw/0.2.nix { };
 
   libmx = callPackage ../development/libraries/libmx { };
 
@@ -5323,9 +6281,15 @@ let
 
   libnetfilter_conntrack = callPackage ../development/libraries/libnetfilter_conntrack { };
 
+  libnetfilter_cthelper = callPackage ../development/libraries/libnetfilter_cthelper { };
+
+  libnetfilter_cttimeout = callPackage ../development/libraries/libnetfilter_cttimeout { };
+
   libnetfilter_queue = callPackage ../development/libraries/libnetfilter_queue { };
 
   libnfnetlink = callPackage ../development/libraries/libnfnetlink { };
+
+  libnftnl = callPackage ../development/libraries/libnftnl { };
 
   libnih = callPackage ../development/libraries/libnih { };
 
@@ -5349,6 +6313,8 @@ let
 
   libopus = callPackage ../development/libraries/libopus { };
 
+  libosinfo = callPackage ../development/libraries/libosinfo {};
+
   libosip = callPackage ../development/libraries/osip {};
 
   libosip_3 = callPackage ../development/libraries/osip/3.nix {};
@@ -5367,12 +6333,16 @@ let
 
   libpipeline = callPackage ../development/libraries/libpipeline { };
 
+  libpgf = callPackage ../development/libraries/libpgf { };
+
   libpng = callPackage ../development/libraries/libpng { };
   libpng_apng = libpng.override { apngSupport = true; };
   libpng12 = callPackage ../development/libraries/libpng/12.nix { };
   libpng15 = callPackage ../development/libraries/libpng/15.nix { };
 
   libpaper = callPackage ../development/libraries/libpaper { };
+
+  libpfm = callPackage ../development/libraries/libpfm { };
 
   libproxy = callPackage ../development/libraries/libproxy {
     stdenv = if stdenv.isDarwin
@@ -5403,11 +6373,7 @@ let
   # To bootstrap SBCL, I need CLisp 2.44.1; it needs libsigsegv 2.5
   libsigsegv_25 = callPackage ../development/libraries/libsigsegv/2.5.nix { };
 
-  libsndfile = callPackage ../development/libraries/libsndfile {
-    stdenv = if stdenv.isDarwin
-      then overrideGCC stdenv gccApple
-      else stdenv;
-  };
+  libsndfile = callPackage ../development/libraries/libsndfile { };
 
   libsodium = callPackage ../development/libraries/libsodium { };
 
@@ -5419,9 +6385,15 @@ let
 
   libstartup_notification = callPackage ../development/libraries/startup-notification { };
 
+  libstrophe = callPackage ../development/libraries/libstrophe { };
+
   libspatialindex = callPackage ../development/libraries/libspatialindex { };
 
   libspatialite = callPackage ../development/libraries/libspatialite { };
+
+  libstatgrab = callPackage ../development/libraries/libstatgrab { };
+
+  libtar = callPackage ../development/libraries/libtar { };
 
   libtasn1 = callPackage ../development/libraries/libtasn1 { };
 
@@ -5433,7 +6405,16 @@ let
 
   libtommath = callPackage ../development/libraries/libtommath { };
 
+  libtomcrypt = callPackage ../development/libraries/libtomcrypt { };
+
   libtorrentRasterbar = callPackage ../development/libraries/libtorrent-rasterbar {
+    # fix "unrecognized option -arch" error
+    stdenv = if stdenv.isDarwin
+      then clangStdenv
+      else stdenv;
+  };
+
+  libtorrentRasterbar_0_16 = callPackage ../development/libraries/libtorrent-rasterbar/0.16.nix {
     # fix "unrecognized option -arch" error
     stdenv = if stdenv.isDarwin
       then clangStdenv
@@ -5452,12 +6433,16 @@ let
 
   libgeotiff = callPackage ../development/libraries/libgeotiff { };
 
+  libu2f-host = callPackage ../development/libraries/libu2f-host { };
+
   libunistring = callPackage ../development/libraries/libunistring { };
 
   libupnp = callPackage ../development/libraries/pupnp { };
 
-  giflib = callPackage ../development/libraries/giflib { };
+  giflib = giflib_5_1;
   giflib_4_1 = callPackage ../development/libraries/giflib/4.1.nix { };
+  giflib_5_0 = callPackage ../development/libraries/giflib/5.0.nix { };
+  giflib_5_1 = callPackage ../development/libraries/giflib/5.1.nix { };
 
   libungif = callPackage ../development/libraries/giflib/libungif.nix { };
 
@@ -5467,19 +6452,17 @@ let
 
   liburcu = callPackage ../development/libraries/liburcu { };
 
-  libusb = callPackage ../development/libraries/libusb {
-    stdenv = if stdenv.isDarwin
-      then overrideGCC stdenv gccApple
-      else stdenv;
-  };
+  libusb = callPackage ../development/libraries/libusb {};
 
   libusb1 = callPackage ../development/libraries/libusb1 {
-    stdenv = if stdenv.isDarwin # http://gcc.gnu.org/bugzilla/show_bug.cgi?id=50909
-      then overrideGCC stdenv gccApple
+    stdenv = if stdenv.isDarwin
+      then clangStdenv
       else stdenv;
   };
 
   libunwind = callPackage ../development/libraries/libunwind { };
+
+  libuvVersions = recurseIntoAttrs (callPackage ../development/libraries/libuv { });
 
   libv4l = lowPrio (v4l_utils.override {
     withQt4 = false;
@@ -5532,6 +6515,8 @@ let
 
   libxklavier = callPackage ../development/libraries/libxklavier { };
 
+  libxls = callPackage ../development/libraries/libxls { };
+
   libxmi = callPackage ../development/libraries/libxmi { };
 
   libxml2 = callPackage ../development/libraries/libxml2 {
@@ -5555,9 +6540,12 @@ let
   libyaml = callPackage ../development/libraries/libyaml { };
 
   libyamlcpp = callPackage ../development/libraries/libyaml-cpp { };
-  libyamlcpp03 = callPackage ../development/libraries/libyaml-cpp/0.3.x.nix { };
 
-  libyubikey = callPackage ../development/libraries/libyubikey {};
+  libykneomgr = callPackage ../development/libraries/libykneomgr { };
+
+  libyubikey = callPackage ../development/libraries/libyubikey { };
+
+  libzen = callPackage ../development/libraries/libzen { };
 
   libzip = callPackage ../development/libraries/libzip { };
 
@@ -5574,13 +6562,15 @@ let
 
   lirc = callPackage ../development/libraries/lirc { };
 
+  liquidfun = callPackage ../development/libraries/liquidfun { };
+
   liquidwar = builderDefsPackage ../games/liquidwar {
     inherit (xlibs) xproto libX11 libXrender;
     inherit gmp mesa libjpeg
       expat gettext perl
       SDL SDL_image SDL_mixer SDL_ttf
       curl sqlite
-      libogg libvorbis
+      libogg libvorbis libcaca csound cunit
       ;
     guile = guile_1_8;
     libpng = libpng15; # 0.0.13 needs libpng 1.2--1.5
@@ -5596,6 +6586,8 @@ let
 
   lzo = callPackage ../development/libraries/lzo { };
 
+  matio = callPackage ../development/libraries/matio { };
+
   mdds_0_7_1 = callPackage ../development/libraries/mdds/0.7.1.nix { };
   mdds = callPackage ../development/libraries/mdds { };
 
@@ -5606,25 +6598,25 @@ let
 
   mesaSupported = lib.elem system lib.platforms.mesaPlatforms;
 
-  mesa_original = callPackage ../development/libraries/mesa {
+  mesaDarwinOr = alternative: if stdenv.isDarwin
+    then callPackage ../development/libraries/mesa-darwin { }
+    else alternative;
+  mesa_noglu = mesaDarwinOr (callPackage ../development/libraries/mesa {
     # makes it slower, but during runtime we link against just mesa_drivers
     # through /run/opengl-driver*, which is overriden according to config.grsecurity
     grsecEnabled = true;
-  };
-
-  mesa_noglu = if stdenv.isDarwin
-    then darwinX11AndOpenGL // { driverLink = mesa_noglu; }
-    else mesa_original;
-  mesa_drivers = let
-      mo = mesa_original.override { grsecEnabled = config.grsecurity or false; };
-    in mo.drivers;
-  mesa_glu = callPackage ../development/libraries/mesa-glu { };
-  mesa = if stdenv.isDarwin then darwinX11AndOpenGL
-    else buildEnv {
-      name = "mesa-${mesa_noglu.version}";
-      paths = [ mesa_glu mesa_noglu ];
+  });
+  mesa_glu =  mesaDarwinOr (callPackage ../development/libraries/mesa-glu { });
+  mesa_drivers = mesaDarwinOr (
+    let mo = mesa_noglu.override {
+      grsecEnabled = config.grsecurity or false;
     };
-  darwinX11AndOpenGL = callPackage ../os-specific/darwin/native-x11-and-opengl { };
+    in mo.drivers
+  );
+  mesa = mesaDarwinOr (buildEnv {
+    name = "mesa-${mesa_noglu.version}";
+    paths = [ mesa_noglu mesa_glu ];
+  });
 
   metaEnvironment = recurseIntoAttrs (let callPackage = newScope pkgs.metaEnvironment; in rec {
     sdfLibrary    = callPackage ../development/libraries/sdf-library { aterm = aterm28; };
@@ -5650,12 +6642,28 @@ let
   minmay = callPackage ../development/libraries/minmay { };
 
   miro = callPackage ../applications/video/miro {
-    inherit (pythonPackages) pywebkitgtk pysqlite pycurl mutagen;
+    inherit (pythonPackages) pywebkitgtk pycurl mutagen;
+    avahi = avahi.override {
+      withLibdnssdCompat = true;
+    };
   };
 
   mkvtoolnix = callPackage ../applications/video/mkvtoolnix { };
 
-  mlt = callPackage ../development/libraries/mlt { };
+  mkvtoolnix-cli = mkvtoolnix.override {
+    withGUI = false;
+    wxGTK = null;
+  };
+
+  mlt-qt4 = callPackage ../development/libraries/mlt {
+    qt = qt4;
+  };
+
+  mlt-qt5 = callPackage ../development/libraries/mlt {
+    qt = qt5;
+  };
+
+  movit = callPackage ../development/libraries/movit { };
 
   mps = callPackage ../development/libraries/mps { };
 
@@ -5671,6 +6679,8 @@ let
 
   mpich2 = callPackage ../development/libraries/mpich2 { };
 
+  mstpd = callPackage ../os-specific/linux/mstpd { };
+
   mtdev = callPackage ../development/libraries/mtdev { };
 
   mtpfs = callPackage ../tools/filesystems/mtpfs { };
@@ -5680,6 +6690,8 @@ let
   };
 
   muparser = callPackage ../development/libraries/muparser { };
+
+  mygpoclient = callPackage ../development/python-modules/mygpoclient { };
 
   mygui = callPackage ../development/libraries/mygui {};
 
@@ -5693,13 +6705,6 @@ let
 
   ncurses = callPackage ../development/libraries/ncurses {
     unicode = system != "i686-cygwin";
-    stdenv =
-      # On Darwin, NCurses uses `-no-cpp-precomp', which is specific to
-      # Apple-GCC.  Since NCurses is part of stdenv, always use
-      # `stdenvNative' to build it.
-      if stdenv.isDarwin
-      then allStdenvs.stdenvNative
-      else stdenv;
   };
 
   neon = callPackage ../development/libraries/neon {
@@ -5729,6 +6734,8 @@ let
 
   ntrack = callPackage ../development/libraries/ntrack { };
 
+  nvidia-texture-tools = callPackage ../development/libraries/nvidia-texture-tools { };
+
   ode = builderDefsPackage (import ../development/libraries/ode) { };
 
   ogre = callPackage ../development/libraries/ogre {};
@@ -5744,6 +6751,8 @@ let
 
   openbabel = callPackage ../development/libraries/openbabel { };
 
+  openbr = callPackage ../development/libraries/openbr { };
+
   opencascade = callPackage ../development/libraries/opencascade { };
 
   opencascade_6_5 = callPackage ../development/libraries/opencascade/6.5.nix {
@@ -5752,6 +6761,8 @@ let
   };
 
   opencascade_oce = callPackage ../development/libraries/opencascade/oce.nix { };
+
+  opencollada = callPackage ../development/libraries/opencollada { };
 
   opencsg = callPackage ../development/libraries/opencsg { };
 
@@ -5766,9 +6777,13 @@ let
   # this ctl version is needed by openexr_viewers
   openexr_ctl = callPackage ../development/libraries/openexr_ctl { };
 
-  openexr = callPackage ../development/libraries/openexr { };
+  openexr = dropCxx (callPackage ../development/libraries/openexr { });
 
-  openldap = callPackage ../development/libraries/openldap { };
+  openldap = callPackage ../development/libraries/openldap {
+    stdenv = if stdenv.isDarwin
+      then clangStdenv
+      else stdenv;
+  };
 
   openlierox = callPackage ../games/openlierox { };
 
@@ -5787,6 +6802,12 @@ let
     ffmpeg = ffmpeg_0_10;
   };
 
+  openspades = callPackage ../games/openspades {};
+
+  libressl = callPackage ../development/libraries/libressl { };
+
+  boringssl = callPackage ../development/libraries/boringssl { };
+
   openssl = callPackage ../development/libraries/openssl {
     fetchurl = fetchurlBoot;
     cryptodevHeaders = linuxPackages.cryptodev.override {
@@ -5801,6 +6822,8 @@ let
 
   p11_kit = callPackage ../development/libraries/p11-kit { };
 
+  paperkey = callPackage ../tools/security/paperkey { };
+
   pangoxsl = callPackage ../development/libraries/pangoxsl { };
 
   pcl = callPackage ../development/libraries/pcl {
@@ -5813,15 +6836,20 @@ let
 
   pdf2xml = callPackage ../development/libraries/pdf2xml {} ;
 
-  pdf2htmlex = callPackage ../development/libraries/pdf2htmlex {} ;
+  phonon = callPackage ../development/libraries/phonon/qt4 {};
 
-  phonon = callPackage ../development/libraries/phonon { };
+  phonon_backend_gstreamer = callPackage ../development/libraries/phonon-backend-gstreamer/qt4 {};
 
-  phonon_backend_gstreamer = callPackage ../development/libraries/phonon-backend-gstreamer { };
+  phonon_backend_vlc = callPackage ../development/libraries/phonon-backend-vlc/qt4 {};
 
-  phonon_backend_vlc = callPackage ../development/libraries/phonon-backend-vlc { };
+  phonon_qt5 = callPackage ../development/libraries/phonon/qt5 {};
+
+  phonon_qt5_backend_gstreamer = callPackage ../development/libraries/phonon-backend-gstreamer/qt5 {};
+  phonon_qt5_backend_vlc = callPackage ../development/libraries/phonon-backend-vlc/qt5 {};
 
   physfs = callPackage ../development/libraries/physfs { };
+
+  pipelight = callPackage ../tools/misc/pipelight { };
 
   pkcs11helper = callPackage ../development/libraries/pkcs11helper { };
 
@@ -5829,18 +6857,28 @@ let
 
   pocketsphinx = callPackage ../development/libraries/pocketsphinx { };
 
-  podofo = callPackage ../development/libraries/podofo { };
+  podofo = callPackage ../development/libraries/podofo { lua5 = lua5_1; };
+
+  poker-eval = callPackage ../development/libraries/poker-eval { };
 
   polkit = callPackage ../development/libraries/polkit {
     spidermonkey = spidermonkey_185;
   };
 
-  polkit_qt_1 = callPackage ../development/libraries/polkit-qt-1 { };
+  polkit_qt4 = callPackage ../development/libraries/polkit-qt-1 {
+    inherit qt4;
+  };
+
+  polkit_qt5 = callPackage ../development/libraries/polkit-qt-1 {
+    inherit qt5;
+    withQt5 = true;
+  };
 
   policykit = callPackage ../development/libraries/policykit { };
 
   poppler = callPackage ../development/libraries/poppler { lcms = lcms2; };
   popplerQt4 = poppler.poppler_qt4;
+  popplerQt5 = poppler.poppler_qt5;
 
   popt = callPackage ../development/libraries/popt { };
 
@@ -5881,6 +6919,10 @@ let
 
   qoauth = callPackage ../development/libraries/qoauth { };
 
+  quazip = callPackage ../development/libraries/quazip {
+    qt = qt5;
+  };
+
   qt3 = callPackage ../development/libraries/qt-3 {
     openglSupport = mesaSupported;
     libpng = libpng12;
@@ -5900,12 +6942,12 @@ let
       else stdenv;
   };
 
-  qt48Full = qt48.override {
+  qt48Full = appendToName "full" (qt48.override {
     docs = true;
     demos = true;
     examples = true;
     developerBuild = true;
-  };
+  });
 
   qt4SDK = qtcreator.override {
     sdkBuild = true;
@@ -5920,21 +6962,24 @@ let
     bison = bison2; # error: too few arguments to function 'int yylex(...
   };
 
-  qt5Full = qt5.override {
+  qt5Full = appendToName "full" (qt5.override {
     buildDocs = true;
     buildExamples = true;
     buildTests = true;
     developerBuild = true;
-  };
+  });
 
   qt5SDK = qtcreator.override {
     sdkBuild = true;
     qtLib = qt5Full;
+    withDocumentation = false; # fails to setup some paths
   };
 
   qtcreator = callPackage ../development/qtcreator {
     qtLib = qt48.override { developerBuild = true; };
   };
+
+  qtkeychain = callPackage ../development/libraries/qtkeychain { };
 
   qtscriptgenerator = callPackage ../development/libraries/qtscriptgenerator { };
 
@@ -5946,31 +6991,20 @@ let
 
   rabbitmq-c = callPackage ../development/libraries/rabbitmq-c {};
 
+  rabbitmq-java-client = callPackage ../development/libraries/rabbitmq-java-client {};
+
   raul = callPackage ../development/libraries/audio/raul { };
 
-  readline = readline6; # 6.2 works, 6.3 breaks python, parted
+  readline = readline6;
+  readline6 = readline63;
 
-  readline4 = callPackage ../development/libraries/readline/readline4.nix { };
+  readline5 = callPackage ../development/libraries/readline/5.x.nix { };
 
-  readline5 = callPackage ../development/libraries/readline/readline5.nix { };
+  readline62 = callPackage ../development/libraries/readline/6.2.nix { };
 
-  readline6 = callPackage ../development/libraries/readline/readline6.nix {
-    stdenv =
-      # On Darwin, Readline uses `-arch_only', which is specific to
-      # Apple-GCC.  So give it what it expects.
-      if stdenv.isDarwin
-      then overrideGCC stdenv gccApple
-      else stdenv;
-  };
+  readline63 = callPackage ../development/libraries/readline/6.3.nix { };
 
-  readline63 = callPackage ../development/libraries/readline/readline6.3.nix {
-    stdenv =
-      # On Darwin, Readline uses `-arch_only', which is specific to
-      # Apple-GCC.  So give it what it expects.
-      if stdenv.isDarwin
-      then overrideGCC stdenv gccApple
-      else stdenv;
-  };
+  readosm = callPackage ../development/libraries/readosm { };
 
   librdf_raptor = callPackage ../development/libraries/librdf/raptor.nix { };
 
@@ -5981,6 +7015,8 @@ let
   librdf_redland = callPackage ../development/libraries/librdf/redland.nix { };
 
   librdf = callPackage ../development/libraries/librdf { };
+
+  libsmf = callPackage ../development/libraries/audio/libsmf { };
 
   lilv = callPackage ../development/libraries/audio/lilv { };
 
@@ -6012,7 +7048,7 @@ let
     openglSupport = mesaSupported;
     alsaSupport = (!stdenv.isDarwin);
     x11Support = true;
-    pulseaudioSupport = stdenv.isDarwin; # better go through ALSA
+    pulseaudioSupport = true;
 
     # resolve the unrecognized -fpascal-strings option error
     stdenv = if stdenv.isDarwin
@@ -6035,6 +7071,8 @@ let
 
   SDL_sound = callPackage ../development/libraries/SDL_sound { };
 
+  SDL_stretch= callPackage ../development/libraries/SDL_stretch { };
+
   SDL_ttf = callPackage ../development/libraries/SDL_ttf { };
 
   SDL2 = callPackage ../development/libraries/SDL2 {
@@ -6048,6 +7086,8 @@ let
 
   SDL2_mixer = callPackage ../development/libraries/SDL2_mixer { };
 
+  SDL2_net = callPackage ../development/libraries/SDL2_net { };
+
   SDL2_gfx = callPackage ../development/libraries/SDL2_gfx { };
 
   serd = callPackage ../development/libraries/serd {};
@@ -6060,6 +7100,8 @@ let
   simgear = callPackage ../development/libraries/simgear { };
 
   sfml_git = callPackage ../development/libraries/sfml { };
+
+  skalibs = callPackage ../development/libraries/skalibs { };
 
   slang = callPackage ../development/libraries/slang { };
 
@@ -6086,7 +7128,11 @@ let
 
   sord = callPackage ../development/libraries/sord {};
 
+  soundtouch = callPackage ../development/libraries/soundtouch {};
+
   spandsp = callPackage ../development/libraries/spandsp {};
+
+  spatialite_tools = callPackage ../development/libraries/spatialite-tools { };
 
   speechd = callPackage ../development/libraries/speechd { };
 
@@ -6095,6 +7141,8 @@ let
   speex = callPackage ../development/libraries/speex { };
 
   sphinxbase = callPackage ../development/libraries/sphinxbase { };
+
+  sphinxsearch = callPackage ../servers/search/sphinxsearch { };
 
   spice = callPackage ../development/libraries/spice {
     celt = celt_0_5_1;
@@ -6108,17 +7156,19 @@ let
 
   sratom = callPackage ../development/libraries/audio/sratom { };
 
+  srm = callPackage ../tools/security/srm { };
+
   srtp = callPackage ../development/libraries/srtp {};
 
   srtp_linphone = callPackage ../development/libraries/srtp/linphone.nix { };
 
-  sqlite = lowPrio (callPackage ../development/libraries/sqlite {
+  sqlite = lowPrio (callPackage ../development/libraries/sqlite { });
+
+  sqlite-interactive = appendToName "interactive" (sqlite.override { interactive = true; });
+
+  sqlcipher = lowPrio (callPackage ../development/libraries/sqlcipher {
     readline = null;
     ncurses = null;
-  });
-
-  sqliteInteractive = appendToName "interactive" (sqlite.override {
-    inherit readline ncurses;
   });
 
   stfl = callPackage ../development/libraries/stfl {
@@ -6141,7 +7191,9 @@ let
 
   suil = callPackage ../development/libraries/audio/suil { };
 
-  suitesparse = callPackage ../development/libraries/suitesparse { };
+  sutils = callPackage ../tools/misc/sutils { };
+
+  svrcore = callPackage ../development/libraries/svrcore { };
 
   sword = callPackage ../development/libraries/sword { };
 
@@ -6153,7 +7205,9 @@ let
 
   taglib_extras = callPackage ../development/libraries/taglib-extras { };
 
-  talloc = callPackage ../development/libraries/talloc { };
+  talloc = callPackage ../development/libraries/talloc {
+    python = python2;
+  };
 
   tclap = callPackage ../development/libraries/tclap {};
 
@@ -6163,7 +7217,15 @@ let
 
   tcltls = callPackage ../development/libraries/tcltls { };
 
-  tdb = callPackage ../development/libraries/tdb { };
+  ctdb = callPackage ../development/libraries/ctdb { };
+
+  ntdb = callPackage ../development/libraries/ntdb {
+    python = python2;
+  };
+
+  tdb = callPackage ../development/libraries/tdb {
+    python = python2;
+  };
 
   tecla = callPackage ../development/libraries/tecla { };
 
@@ -6172,6 +7234,10 @@ let
   telepathy_farstream = callPackage ../development/libraries/telepathy/farstream {};
 
   telepathy_qt = callPackage ../development/libraries/telepathy/qt { };
+
+  tevent = callPackage ../development/libraries/tevent {
+    python = python2;
+  };
 
   thrift = callPackage ../development/libraries/thrift { };
 
@@ -6183,7 +7249,10 @@ let
 
   tnt = callPackage ../development/libraries/tnt { };
 
+  kyotocabinet = callPackage ../development/libraries/kyotocabinet { };
+
   tokyocabinet = callPackage ../development/libraries/tokyo-cabinet { };
+
   tokyotyrant = callPackage ../development/libraries/tokyo-tyrant { };
 
   tremor = callPackage ../development/libraries/tremor { };
@@ -6207,7 +7276,13 @@ let
     libusb = libusb1;
   };
 
+  uthash = callPackage ../development/libraries/uthash { };
+
   ucommon = callPackage ../development/libraries/ucommon { };
+
+  v8_3_16_14 = callPackage ../development/libraries/v8/3.16.14.nix {
+    inherit (pythonPackages) gyp;
+  };
 
   v8 = callPackage ../development/libraries/v8 {
     inherit (pythonPackages) gyp;
@@ -6246,16 +7321,22 @@ let
   webkit = webkitgtk;
 
   webkitgtk = callPackage ../development/libraries/webkitgtk {
-    harfbuzz = harfbuzz.override {
-      withIcu = true;
-    };
+    harfbuzz = harfbuzz-icu;
+    inherit (xorg) libpthreadstubs;
     gst-plugins-base = gst_all_1.gst-plugins-base;
   };
 
-  webkitgtk2 = webkitgtk.override {
+  webkitgtk24x = callPackage ../development/libraries/webkitgtk/2.4.6.nix {
+    harfbuzz = harfbuzz-icu;
+    gst-plugins-base = gst_all_1.gst-plugins-base;
+  };
+
+  webkitgtk2 = webkitgtk24x.override {
     withGtk2 = true;
     enableIntrospection = false;
   };
+
+  websocketpp = callPackage ../development/libraries/websocket++ { };
 
   wildmidi = callPackage ../development/libraries/wildmidi { };
 
@@ -6292,6 +7373,10 @@ let
 
   x264 = callPackage ../development/libraries/x264 { };
 
+  x265 = callPackage ../development/libraries/x265 { };
+
+  x265-hg = callPackage ../development/libraries/x265/hg.nix { };
+
   xapian = callPackage ../development/libraries/xapian { };
 
   xapianBindings = callPackage ../development/libraries/xapian/bindings {  # TODO perl php Java, tcl, C#, python
@@ -6307,6 +7392,8 @@ let
   xbase = callPackage ../development/libraries/xbase { };
 
   xcb-util-cursor = callPackage ../development/libraries/xcb-util-cursor { };
+
+  xdo = callPackage ../tools/misc/xdo { };
 
   xineLib = callPackage ../development/libraries/xine-lib {
     ffmpeg = ffmpeg_1;
@@ -6328,9 +7415,23 @@ let
 
   xmlsec = callPackage ../development/libraries/xmlsec { };
 
+  xlslib = callPackage ../development/libraries/xlslib { };
+
   xvidcore = callPackage ../development/libraries/xvidcore { };
 
+  xylib = callPackage ../development/libraries/xylib { };
+
   yajl = callPackage ../development/libraries/yajl { };
+
+  yubico-piv-tool = callPackage ../tools/misc/yubico-piv-tool { };
+
+  yubikey-personalization = callPackage ../tools/misc/yubikey-personalization {
+    libusb = libusb1;
+  };
+
+  yubikey-personalization-gui = callPackage ../tools/misc/yubikey-personalization-gui {
+    qt = qt4;
+  };
 
   zangband = builderDefsPackage (import ../games/zangband) {
     inherit ncurses flex bison autoconf automake m4 coreutils;
@@ -6350,8 +7451,40 @@ let
   zeromq3 = callPackage ../development/libraries/zeromq/3.x.nix {};
   zeromq4 = callPackage ../development/libraries/zeromq/4.x.nix {};
 
+  cppzmq = callPackage ../development/libraries/cppzmq {};
+
+  czmq = callPackage ../development/libraries/czmq { };
+
   zziplib = callPackage ../development/libraries/zziplib { };
 
+  ### DEVELOPMENT / LIBRARIES / AGDA
+
+  agda = callPackage ../build-support/agda {
+    glibcLocales = if pkgs.stdenv.isLinux then pkgs.glibcLocales else null;
+    extension = self : super : {};
+    Agda = haskellPackages.Agda;
+    inherit writeScriptBin;
+  };
+
+  agdaBase = callPackage ../development/libraries/agda/agda-base {};
+
+  agdaIowaStdlib = callPackage ../development/libraries/agda/agda-iowa-stdlib {};
+
+  agdaPrelude = callPackage ../development/libraries/agda/agda-prelude {};
+
+  AgdaStdlib = callPackage ../development/compilers/agda/stdlib.nix {
+    inherit (haskellPackages) ghc filemanip;
+  };
+
+  AgdaSheaves = callPackage ../development/libraries/agda/AgdaSheaves {};
+
+  bitvector = callPackage ../development/libraries/agda/bitvector {};
+
+  categories = callPackage ../development/libraries/agda/categories {};
+
+  pretty = callPackage ../development/libraries/agda/pretty {};
+
+  TotalParserCombinators = callPackage ../development/libraries/agda/TotalParserCombinators {};
 
   ### DEVELOPMENT / LIBRARIES / JAVA
 
@@ -6359,7 +7492,21 @@ let
     stdenv = overrideInStdenv stdenv [gnumake380];
   };
 
-  commonsFileUpload = callPackage ../development/libraries/java/jakarta-commons/file-upload { };
+  commonsBcel = callPackage ../development/libraries/java/commons/bcel { };
+
+  commonsBsf = callPackage ../development/libraries/java/commons/bsf { };
+
+  commonsCompress = callPackage ../development/libraries/java/commons/compress { };
+
+  commonsFileUpload = callPackage ../development/libraries/java/commons/fileupload { };
+
+  commonsLang = callPackage ../development/libraries/java/commons/lang { };
+
+  commonsLogging = callPackage ../development/libraries/java/commons/logging { };
+
+  commonsIo = callPackage ../development/libraries/java/commons/io { };
+
+  commonsMath = callPackage ../development/libraries/java/commons/math { };
 
   fastjar = callPackage ../development/tools/java/fastjar { };
 
@@ -6368,12 +7515,6 @@ let
   gwtdragdrop = callPackage ../development/libraries/java/gwt-dragdrop { };
 
   gwtwidgets = callPackage ../development/libraries/java/gwt-widgets { };
-
-  jakartabcel = callPackage ../development/libraries/java/jakarta-bcel {
-    regexp = jakartaregexp;
-  };
-
-  jakartaregexp = callPackage ../development/libraries/java/jakarta-regexp { };
 
   javaCup = callPackage ../development/libraries/java/cup { };
 
@@ -6389,13 +7530,15 @@ let
     stdenv = overrideInStdenv stdenv [gnumake380];
   };
 
-  junit = callPackage ../development/libraries/java/junit { };
+  junit = callPackage ../development/libraries/java/junit { antBuild = releaseTools.antBuild; };
 
   junixsocket = callPackage ../development/libraries/java/junixsocket { };
 
   jzmq = callPackage ../development/libraries/java/jzmq { };
 
   lucene = callPackage ../development/libraries/java/lucene { };
+
+  lucenepp = callPackage ../development/libraries/lucene++ { };
 
   mockobjects = callPackage ../development/libraries/java/mockobjects { };
 
@@ -6416,7 +7559,9 @@ let
 
   ### DEVELOPMENT / LIBRARIES / JAVASCRIPT
 
-  jquery_ui = callPackage ../development/libraries/javascript/jquery-ui { };
+  jquery = callPackage ../development/libraries/javascript/jquery { };
+
+  jquery-ui = callPackage ../development/libraries/javascript/jquery-ui { };
 
   yuicompressor = callPackage ../development/tools/yuicompressor { };
 
@@ -6448,22 +7593,6 @@ let
     overrides = (config.perlPackageOverrides or (p: {})) pkgs;
   });
 
-  perl510Packages = import ./perl-packages.nix {
-    pkgs = pkgs // {
-      perl = perl510;
-      buildPerlPackage = import ../development/perl-modules/generic perl510;
-    };
-    overrides = (config.perl510PackageOverrides or (p: {})) pkgs;
-  };
-
-  perl514Packages = import ./perl-packages.nix {
-    pkgs = pkgs // {
-      perl = perl514;
-      buildPerlPackage = import ../development/perl-modules/generic perl514;
-    };
-    overrides = (config.perl514PackageOverrides or (p: {})) pkgs;
-  };
-
   perlXMLParser = perlPackages.XMLParser;
 
   ack = perlPackages.ack;
@@ -6474,48 +7603,43 @@ let
 
   planetary_annihilation = callPackage ../games/planetaryannihilation { };
 
-
   ### DEVELOPMENT / PYTHON MODULES
 
   # python function with default python interpreter
   buildPythonPackage = pythonPackages.buildPythonPackage;
 
-  pythonPackages = python27Packages;
-
   # `nix-env -i python-nose` installs for 2.7, the default python.
   # Therefore we do not recurse into attributes here, in contrast to
   # python27Packages. `nix-env -iA python26Packages.nose` works
   # regardless.
-  python26Packages = import ./python-packages.nix {
-    inherit pkgs;
+  python26Packages = callPackage ./python-packages.nix {
     python = python26;
+    self = python26Packages;
   };
 
-  python3Packages = python34Packages;
-
-  python33Packages = recurseIntoAttrs (import ./python-packages.nix {
-    inherit pkgs;
-    python = python33;
-  });
-
-  python34Packages = recurseIntoAttrs (import ./python-packages.nix {
-    inherit pkgs;
-    python = python34;
-  });
-
-  python32Packages = import ./python-packages.nix {
-    inherit pkgs;
-    python = python32;
-  };
-
-  python27Packages = lib.hiPrioSet (recurseIntoAttrs (import ./python-packages.nix {
-    inherit pkgs;
+  python27Packages = lib.hiPrioSet (recurseIntoAttrs (callPackage ./python-packages.nix {
     python = python27;
+    self = python27Packages;
   }));
 
-  pypyPackages = recurseIntoAttrs (import ./python-packages.nix {
-    inherit pkgs;
+  python32Packages = callPackage ./python-packages.nix {
+    python = python32;
+    self = python32Packages;
+  };
+
+  python33Packages = recurseIntoAttrs (callPackage ./python-packages.nix {
+    python = python33;
+    self = python33Packages;
+  });
+
+  python34Packages = recurseIntoAttrs (callPackage ./python-packages.nix {
+    python = python34;
+    self = python34Packages;
+  });
+
+  pypyPackages = recurseIntoAttrs (callPackage ./python-packages.nix {
     python = pypy;
+    self = pypyPackages;
   });
 
   foursuite = callPackage ../development/python-modules/4suite { };
@@ -6552,13 +7676,9 @@ let
 
   pylint = callPackage ../development/python-modules/pylint { };
 
-  pyopenssl = builderDefsPackage (import ../development/python-modules/pyopenssl) {
-    inherit python openssl;
-  };
+  pyopenssl = pythonPackages.pyopenssl;
 
   rhpl = callPackage ../development/python-modules/rhpl { };
-
-  sip = callPackage ../development/python-modules/sip { };
 
   pyqt4 = callPackage ../development/python-modules/pyqt/4.x.nix {
     stdenv = if stdenv.isDarwin
@@ -6598,28 +7718,31 @@ let
   R = callPackage ../applications/science/math/R {
     inherit (xlibs) libX11 libXt;
     texLive = texLiveAggregationFun { paths = [ texLive texLiveExtra ]; };
-    withRecommendedPackages = false;
+    withRecommendedPackages = true;
   };
 
   rWrapper = callPackage ../development/r-modules/wrapper.nix {
     # Those packages are usually installed as part of the R build.
-    recommendedPackages = with rPackages; [ MASS lattice Matrix nlme
-      survival boot cluster codetools foreign KernSmooth rpart class
-      nnet spatial mgcv ];
+    recommendedPackages = with rPackages; [ boot class cluster codetools
+      foreign KernSmooth lattice MASS Matrix mgcv nlme nnet rpart
+      spatial survival ];
     # Override this attribute to register additional libraries.
     packages = [];
   };
 
-  rPackages = import ../development/r-modules/cran-packages.nix {
-    inherit pkgs;
+  rPackages = callPackage ../development/r-modules {
     overrides = (config.rPackageOverrides or (p: {})) pkgs;
   };
 
   ### SERVERS
 
+  "389-ds-base" = callPackage ../servers/ldap/389 {
+    kerberos = krb5;
+  };
+
   rdf4store = callPackage ../servers/http/4store { };
 
-  apacheHttpd = pkgs.apacheHttpd_2_2;
+  apacheHttpd = pkgs.apacheHttpd_2_4;
 
   apacheHttpd_2_2 = callPackage ../servers/http/apache-httpd/2.2.nix {
     sslSupport = true;
@@ -6629,6 +7752,36 @@ let
     sslSupport = true;
   });
 
+  apacheHttpdPackagesFor = apacheHttpd: self: let callPackage = newScope self; in {
+    inherit apacheHttpd;
+
+    mod_dnssd = callPackage ../servers/http/apache-modules/mod_dnssd { };
+
+    mod_evasive = callPackage ../servers/http/apache-modules/mod_evasive { };
+
+    mod_fastcgi = callPackage ../servers/http/apache-modules/mod_fastcgi { };
+
+    mod_python = callPackage ../servers/http/apache-modules/mod_python { };
+
+    mod_wsgi = callPackage ../servers/http/apache-modules/mod_wsgi { };
+
+    php = pkgs.php.override { inherit apacheHttpd; };
+
+    subversion = pkgs.subversion.override { httpServer = true; inherit apacheHttpd; };
+  };
+
+  apacheHttpdPackages = apacheHttpdPackagesFor pkgs.apacheHttpd pkgs.apacheHttpdPackages;
+  apacheHttpdPackages_2_2 = apacheHttpdPackagesFor pkgs.apacheHttpd_2_2 pkgs.apacheHttpdPackages_2_2;
+  apacheHttpdPackages_2_4 = apacheHttpdPackagesFor pkgs.apacheHttpd_2_4 pkgs.apacheHttpdPackages_2_4;
+
+  cadvisor = callPackage ../servers/monitoring/cadvisor { };
+
+  cassandra = callPackage ../servers/nosql/cassandra { };
+
+  apache-jena = callPackage ../servers/nosql/apache-jena/binary.nix {
+    java = jdk;
+  };
+
   apcupsd = callPackage ../servers/apcupsd { };
 
   sabnzbd = callPackage ../servers/sabnzbd { };
@@ -6636,6 +7789,9 @@ let
   bind = callPackage ../servers/dns/bind { };
 
   bird = callPackage ../servers/bird { };
+
+  bosun = callPackage ../servers/monitoring/bosun {};
+  scollector = callPackage ../servers/monitoring/bosun/scollector.nix {};
 
   couchdb = callPackage ../servers/http/couchdb {
     spidermonkey = spidermonkey_185;
@@ -6662,7 +7818,7 @@ let
 
   dictdWordnet = callPackage ../servers/dict/dictd-wordnet.nix {};
 
-  diod = callPackage ../servers/diod { };
+  diod = callPackage ../servers/diod { lua = lua5_1; };
 
   dovecot = dovecot21;
 
@@ -6677,6 +7833,12 @@ let
   ejabberd = callPackage ../servers/xmpp/ejabberd {
     erlang = erlangR16;
   };
+
+  prosody = recurseIntoAttrs (
+    callPackage ../servers/xmpp/prosody {
+      lua5 = lua5_1;
+      inherit (lua51Packages) luasocket luasec luaexpat luafilesystem luabitop;
+  });
 
   elasticmq = callPackage ../servers/elasticmq { };
 
@@ -6699,9 +7861,7 @@ let
 
   freeswitch = callPackage ../servers/sip/freeswitch { };
 
-  ghostOne = callPackage ../servers/games/ghost-one {
-    boost = boost144.override { taggedLayout = true; };
-  };
+  ghostOne = callPackage ../servers/games/ghost-one { };
 
   ircdHybrid = callPackage ../servers/irc/ircd-hybrid { };
 
@@ -6713,27 +7873,30 @@ let
 
   jetty61 = callPackage ../servers/http/jetty/6.1 { };
 
+  jetty92 = callPackage ../servers/http/jetty/9.2.nix { };
+
   joseki = callPackage ../servers/http/joseki {};
 
   leafnode = callPackage ../servers/news/leafnode { };
 
   lighttpd = callPackage ../servers/http/lighttpd { };
 
-  mailman = callPackage ../servers/mail/mailman { };
+  mailman = callPackage ../servers/mail/mailman {
+    dnspython = pythonPackages.dns;
+  };
 
-  mediatomb = callPackage ../servers/mediatomb { };
+  mediatomb = callPackage ../servers/mediatomb {
+    spidermonkey = spidermonkey_185;
+  };
 
   memcached = callPackage ../servers/memcached {};
 
-  mod_dnssd = callPackage ../servers/http/apache-modules/mod_dnssd/default.nix { };
-
-  mod_evasive = callPackage ../servers/http/apache-modules/mod_evasive { };
-
-  mod_python = callPackage ../servers/http/apache-modules/mod_python { };
-
-  mod_fastcgi = callPackage ../servers/http/apache-modules/mod_fastcgi { };
-
-  mod_wsgi = callPackage ../servers/http/apache-modules/mod_wsgi { };
+  # Backwards compatibility.
+  mod_dnssd = pkgs.apacheHttpdPackages.mod_dnssd;
+  mod_evasive = pkgs.apacheHttpdPackages.mod_evasive;
+  mod_fastcgi = pkgs.apacheHttpdPackages.mod_fastcgi;
+  mod_python = pkgs.apacheHttpdPackages.mod_python;
+  mod_wsgi = pkgs.apacheHttpdPackages.mod_wsgi;
 
   mpd = callPackage ../servers/mpd {
     aacSupport    = config.mpd.aacSupport or true;
@@ -6744,20 +7907,31 @@ let
 
   miniHttpd = callPackage ../servers/http/mini-httpd {};
 
+  mlmmj = callPackage ../servers/mail/mlmmj { };
+
   myserver = callPackage ../servers/http/myserver { };
 
   nginx = callPackage ../servers/http/nginx {
     rtmp        = true;
     fullWebDAV  = true;
-    syslog      = true;
+    syslog      = false; # the patch is not found
+    moreheaders = true;
+  };
+  nginxUnstable = callPackage ../servers/http/nginx/unstable.nix {
+    fullWebDAV  = true;
+    syslog      = false; # the patch is not found
     moreheaders = true;
   };
 
   ngircd = callPackage ../servers/irc/ngircd { };
 
-  nsd = callPackage ../servers/dns/nsd { };
+  nix-binary-cache = callPackage ../servers/http/nix-binary-cache {};
+
+  nsd = callPackage ../servers/dns/nsd (config.nsd or {});
 
   nsq = callPackage ../servers/nsq { };
+
+  openresty = callPackage ../servers/http/openresty { };
 
   opensmtpd = callPackage ../servers/mail/opensmtpd { };
 
@@ -6765,9 +7939,13 @@ let
 
   popa3d = callPackage ../servers/mail/popa3d { };
 
-  postfix = callPackage ../servers/mail/postfix { };
+  postfix28 = callPackage ../servers/mail/postfix { };
 
   postfix211 = callPackage ../servers/mail/postfix/2.11.nix { };
+
+  postfix = postfix211;
+
+  pshs = callPackage ../servers/http/pshs { };
 
   pulseaudio = callPackage ../servers/pulseaudio {
     gconf = gnome.GConf;
@@ -6776,6 +7954,12 @@ let
     # server.
     bluez = null;
     avahi = null;
+  };
+  pulseaudioFull = pulseaudio.override {
+    bluez = bluez5;
+    avahi = avahi;
+    jackaudioSupport = true;
+    x11Support = true;
   };
 
   tomcat_connectors = callPackage ../servers/http/apache-modules/tomcat-connectors { };
@@ -6790,11 +7974,16 @@ let
 
   mariadb = callPackage ../servers/sql/mariadb {};
 
-  mongodb = callPackage ../servers/nosql/mongodb { };
+  mongodb = callPackage ../servers/nosql/mongodb {
+    boost = boost156;
+    sasl = cyrus_sasl;
+  };
 
   riak = callPackage ../servers/nosql/riak/1.3.1.nix { };
 
   influxdb = callPackage ../servers/nosql/influxdb { };
+
+  hyperdex = callPackage ../servers/nosql/hyperdex { };
 
   mysql51 = import ../servers/sql/mysql/5.1.x.nix {
     inherit fetchurl ncurses zlib perl openssl stdenv;
@@ -6813,7 +8002,14 @@ let
 
   nagiosPluginsOfficial = callPackage ../servers/monitoring/nagios/plugins/official-2.x.nix { };
 
+  neo4j = callPackage ../servers/nosql/neo4j { };
+
   net_snmp = callPackage ../servers/monitoring/net-snmp { };
+
+  newrelic-sysmond = callPackage ../servers/monitoring/newrelic-sysmond { };
+
+  riemann = callPackage ../servers/monitoring/riemann { };
+  riemann-dash = callPackage ../servers/monitoring/riemann-dash { };
 
   oidentd = callPackage ../servers/identd/oidentd { };
 
@@ -6822,6 +8018,16 @@ let
   oracleXE = callPackage ../servers/sql/oracle-xe { };
 
   OVMF = callPackage ../applications/virtualization/OVMF { };
+
+  pgpool92 = callPackage ../servers/sql/pgpool/default.nix {
+    postgresql = postgresql92;
+  };
+
+  pgpool93 = callPackage ../servers/sql/pgpool/default.nix {
+    postgresql = postgresql93;
+  };
+
+  pgpool = pgpool92;
 
   postgresql = postgresql92;
 
@@ -6834,6 +8040,8 @@ let
   postgresql92 = callPackage ../servers/sql/postgresql/9.2.x.nix { };
 
   postgresql93 = callPackage ../servers/sql/postgresql/9.3.x.nix { };
+
+  postgresql94 = callPackage ../servers/sql/postgresql/9.4.x.nix { };
 
   postgresql_jdbc = callPackage ../servers/sql/postgresql/jdbc { };
 
@@ -6853,30 +8061,43 @@ let
 
   radius = callPackage ../servers/radius { };
 
-  redis = callPackage ../servers/nosql/redis {
-    stdenv =
-      if stdenv.isDarwin
-      then overrideGCC stdenv gccApple
-      else stdenv;
-  };
+  redis = callPackage ../servers/nosql/redis { };
 
   redstore = callPackage ../servers/http/redstore { };
 
   restund = callPackage ../servers/restund {};
 
-  rethinkdb = callPackage ../servers/nosql/rethinkdb { };
+  rethinkdb = callPackage ../servers/nosql/rethinkdb {
+    boost = boost155;
+  };
 
-  rippled = callPackage ../servers/rippled { };
+  rippled = callPackage ../servers/rippled {
+    boost = boost155;
+  };
+
+  s6 = callPackage ../servers/s6 { };
 
   spamassassin = callPackage ../servers/mail/spamassassin {
     inherit (perlPackages) HTMLParser NetDNS NetAddrIP DBFile
       HTTPDate MailDKIM LWP IOSocketSSL;
   };
 
-  samba = callPackage ../servers/samba { };
+  samba3 = callPackage ../servers/samba/3.x.nix { };
 
-  # A lightweight Samba, useful for non-Linux-based OSes.
-  samba_light = lowPrio (callPackage ../servers/samba {
+  samba4 = callPackage ../servers/samba/4.x.nix {
+    python = python2;
+    pythonPackages = python2Packages;
+    libiconv = if stdenv.isLinux then null else libiconv;
+    libgcrypt = libgcrypt_1_6;
+    glusterfs = null; # Broken in the current build
+  };
+
+  samba = samba4;
+
+  smbclient = samba;
+
+  # A lightweight Samba 3, useful for non-Linux-based OSes.
+  samba3_light = lowPrio (samba3.override {
     pam = null;
     fam = null;
     cups = null;
@@ -6885,6 +8106,37 @@ let
     # libunwind 1.0.1 is not ported to GNU/Hurd.
     libunwind = null;
   });
+
+  samba4_light = lowPrio (samba4.override {
+    # source3/wscript optionals
+    heimdal = null;
+    openldap = null;
+    cups = null;
+    pam = null;
+    avahi = null;
+    acl = null;
+    libaio = null;
+    fam = null;
+    ctdb = null;
+    ceph = null;
+    glusterfs = null;
+
+    # buildtools/wafsamba/wscript optionals
+    libiconv = null;
+    gettext = null;
+
+    # source4/lib/tls/wscript optionals
+    gnutls = null;
+    libgcrypt = null;
+    libgpgerror = null;
+
+    # other optionals
+    zlib = null;
+    ncurses = null;
+    libcap = null;
+  });
+
+  samba_light = samba3_light;
 
   serfdom = callPackage ../servers/serfdom { };
 
@@ -6911,9 +8163,17 @@ let
 
   tomcat6 = callPackage ../servers/http/tomcat/6.0.nix { };
 
+  tomcat7 = callPackage ../servers/http/tomcat/7.0.nix { };
+
+  tomcat8 = callPackage ../servers/http/tomcat/8.0.nix { };
+
   tomcat_mysql_jdbc = callPackage ../servers/http/tomcat/jdbc/mysql { };
 
+  torque = callPackage ../servers/computing/torque { };
+
   axis2 = callPackage ../servers/http/tomcat/axis2 { };
+
+  unifi = callPackage ../servers/unifi { };
 
   virtuoso6 = callPackage ../servers/sql/virtuoso/6.x.nix { };
 
@@ -6927,19 +8187,26 @@ let
 
   xinetd = callPackage ../servers/xinetd { };
 
+  zookeeper = callPackage ../servers/zookeeper { };
+
+  xquartz = callPackage ../servers/x11/xquartz { };
+  quartz-wm = callPackage ../servers/x11/quartz-wm { stdenv = clangStdenv; };
+
   xorg = recurseIntoAttrs (import ../servers/x11/xorg/default.nix {
-    inherit fetchurl fetchgit fetchpatch stdenv pkgconfig intltool freetype fontconfig
-      libxslt expat libdrm libpng zlib perl mesa_drivers
-      dbus libuuid openssl gperf m4
-      autoconf automake libtool xmlto asciidoc udev flex bison python mtdev pixman;
+    inherit clangStdenv fetchurl fetchgit fetchpatch stdenv pkgconfig intltool freetype fontconfig
+      libxslt expat libpng zlib perl mesa_drivers spice_protocol
+      dbus libuuid openssl gperf m4 libevdev
+      autoconf automake libtool xmlto asciidoc flex bison python mtdev pixman;
     mesa = mesa_noglu;
-  } // {
-    xf86videointel-testing = callPackage ../servers/x11/xorg/xf86-video-intel-testing.nix { };
+    udev = if stdenv.isLinux then udev else null;
+    libdrm = if stdenv.isLinux then libdrm else null;
   });
 
   xorgReplacements = callPackage ../servers/x11/xorg/replacements.nix { };
 
   xorgVideoUnichrome = callPackage ../servers/x11/xorg/unichrome/default.nix { };
+
+  xwayland = with xorg; callPackage ../servers/x11/xorg/xwayland.nix { };
 
   yaws = callPackage ../servers/http/yaws { };
 
@@ -6961,7 +8228,7 @@ let
 
   _915resolution = callPackage ../os-specific/linux/915resolution { };
 
-  nfsUtils = callPackage ../os-specific/linux/nfs-utils { };
+  nfs-utils = callPackage ../os-specific/linux/nfs-utils { };
 
   acpi = callPackage ../os-specific/linux/acpi { };
 
@@ -6969,12 +8236,14 @@ let
 
   acpitool = callPackage ../os-specific/linux/acpitool { };
 
+  alfred = callPackage ../os-specific/linux/batman-adv/alfred.nix { };
+
   alienfx = callPackage ../os-specific/linux/alienfx { };
 
   alsaLib = callPackage ../os-specific/linux/alsa-lib { };
 
   alsaPlugins = callPackage ../os-specific/linux/alsa-plugins {
-    jackaudio = null;
+    jack2 = null;
   };
 
   alsaPluginWrapper = callPackage ../os-specific/linux/alsa-plugins/wrapper.nix { };
@@ -6989,6 +8258,7 @@ let
   apparmor = callPackage ../os-specific/linux/apparmor {
     inherit (perlPackages) LocaleGettext TermReadKey RpcXML;
     bison = bison2;
+    perl = perl516; # ${perl}/.../CORE/handy.h:124:34: error: 'bool' undeclared
   };
 
   atop = callPackage ../os-specific/linux/atop { };
@@ -7034,6 +8304,8 @@ let
     weatherXoap  = config.conky.weatherXoap  or false;
   };
 
+  conntrack_tools = callPackage ../os-specific/linux/conntrack-tools { };
+
   cpufrequtils = callPackage ../os-specific/linux/cpufrequtils { };
 
   cryopid = callPackage ../os-specific/linux/cryopid { };
@@ -7044,7 +8316,9 @@ let
 
   cramfsswap = callPackage ../os-specific/linux/cramfsswap { };
 
-  darwin = rec {
+  darwin = let
+    cmdline = (callPackage ../os-specific/darwin/command-line-tools {}).pure { inherit xpwn; };
+  in rec {
     cctools = forceNativeDrv (callPackage ../os-specific/darwin/cctools-port {
       cross = assert crossSystem != null; crossSystem;
       inherit maloader;
@@ -7058,6 +8332,14 @@ let
     opencflite = callPackage ../os-specific/darwin/opencflite {};
 
     xcode = callPackage ../os-specific/darwin/xcode {};
+
+    osx_sdk = callPackage ../os-specific/darwin/osx-sdk {};
+    osx_private_sdk = callPackage ../os-specific/darwin/osx-private-sdk { inherit osx_sdk; };
+
+    security_tool = callPackage ../os-specific/darwin/security-tool { inherit osx_private_sdk; };
+
+    cmdline_sdk   = cmdline.sdk;
+    cmdline_tools = cmdline.tools;
   };
 
   devicemapper = lvm2;
@@ -7075,7 +8357,9 @@ let
     inherit (xlibs) xproto;
   };
 
-  dmraid = callPackage ../os-specific/linux/dmraid { };
+  dmraid = callPackage ../os-specific/linux/dmraid {
+    devicemapper = devicemapper.override {enable_dmeventd = true;};
+  };
 
   drbd = callPackage ../os-specific/linux/drbd { };
 
@@ -7106,6 +8390,10 @@ let
     then utillinux
     else null;
 
+  light = callPackage ../os-specific/linux/light { };
+
+  lightum = callPackage ../os-specific/linux/lightum { };
+
   e3cfsprogs = callPackage ../os-specific/linux/e3cfsprogs { };
 
   ebtables = callPackage ../os-specific/linux/ebtables { };
@@ -7115,6 +8403,8 @@ let
   ffado = callPackage ../os-specific/linux/ffado { };
 
   fbterm = callPackage ../os-specific/linux/fbterm { };
+
+  firejail = callPackage ../os-specific/linux/firejail {};
 
   fuse = callPackage ../os-specific/linux/fuse { };
 
@@ -7152,6 +8442,8 @@ let
 
   ifplugd = callPackage ../os-specific/linux/ifplugd { };
 
+  iomelt = callPackage ../os-specific/linux/iomelt { };
+
   iotop = callPackage ../os-specific/linux/iotop { };
 
   iproute = callPackage ../os-specific/linux/iproute { };
@@ -7163,7 +8455,15 @@ let
 
   iptables = callPackage ../os-specific/linux/iptables { };
 
+  ipset = callPackage ../os-specific/linux/ipset { };
+
   iw = callPackage ../os-specific/linux/iw { };
+
+  iwlwifi = callPackage ../os-specific/linux/firmware/iwlwifi { };
+
+  iwlegacy = callPackage ../os-specific/linux/firmware/iwlegacy { };
+
+  jfbview = callPackage ../os-specific/linux/jfbview { };
 
   jujuutils = callPackage ../os-specific/linux/jujuutils { };
 
@@ -7182,13 +8482,12 @@ let
   libcgroup = callPackage ../os-specific/linux/libcgroup { };
 
   libnl = callPackage ../os-specific/linux/libnl { };
-  libnl_3_2_19 = callPackage ../os-specific/linux/libnl/3.2.19.nix { };
 
   linuxConsoleTools = callPackage ../os-specific/linux/consoletools { };
 
   # -- Linux kernel expressions ------------------------------------------------
 
-  linuxHeaders = linuxHeaders_3_7;
+  linuxHeaders = linuxHeaders_3_12;
 
   linuxHeaders24Cross = forceNativeDrv (import ../os-specific/linux/kernel-headers/2.4.nix {
     inherit stdenv fetchurl perl;
@@ -7200,7 +8499,7 @@ let
     cross = assert crossSystem != null; crossSystem;
   });
 
-  linuxHeaders_3_7 = callPackage ../os-specific/linux/kernel-headers/3.7.nix { };
+  linuxHeaders_3_12 = callPackage ../os-specific/linux/kernel-headers/3.12.nix { };
 
   linuxHeaders_3_14 = callPackage ../os-specific/linux/kernel-headers/3.14.nix { };
 
@@ -7216,18 +8515,13 @@ let
 
   linux_3_2 = makeOverridable (import ../os-specific/linux/kernel/linux-3.2.nix) {
     inherit fetchurl stdenv perl buildLinux;
-    kernelPatches = [];
+    kernelPatches = [ kernelPatches.bridge_stp_helper ];
   };
-
-  linux_3_2_xen = lowPrio (linux_3_2.override {
-    extraConfig = ''
-      XEN_DOM0 y
-    '';
-  });
 
   linux_3_4 = makeOverridable (import ../os-specific/linux/kernel/linux-3.4.nix) {
     inherit fetchurl stdenv perl buildLinux;
-    kernelPatches = lib.optionals ((platform.kernelArch or null) == "mips")
+    kernelPatches = [ kernelPatches.bridge_stp_helper ]
+     ++ lib.optionals ((platform.kernelArch or null) == "mips")
       [ kernelPatches.mips_fpureg_emu
         kernelPatches.mips_fpu_sigill
       ];
@@ -7235,29 +8529,23 @@ let
 
   linux_3_6_rpi = makeOverridable (import ../os-specific/linux/kernel/linux-rpi-3.6.nix) {
     inherit fetchurl stdenv perl buildLinux;
+    kernelPatches = [ kernelPatches.bridge_stp_helper ];
   };
 
   linux_3_10 = makeOverridable (import ../os-specific/linux/kernel/linux-3.10.nix) {
     inherit fetchurl stdenv perl buildLinux;
-    kernelPatches = lib.optionals ((platform.kernelArch or null) == "mips")
+    kernelPatches = [ kernelPatches.bridge_stp_helper ]
+      ++ lib.optionals ((platform.kernelArch or null) == "mips")
       [ kernelPatches.mips_fpureg_emu
         kernelPatches.mips_fpu_sigill
         kernelPatches.mips_ext3_n32
       ];
   };
 
-  linux_3_10_tuxonice = linux_3_10.override (attrs: {
-    kernelPatches = attrs.kernelPatches ++ [
-      kernelPatches.tuxonice_3_10
-    ];
-    extraConfig = ''
-      TOI_CORE y
-    '';
-  });
-
   linux_3_12 = makeOverridable (import ../os-specific/linux/kernel/linux-3.12.nix) {
     inherit fetchurl stdenv perl buildLinux;
-    kernelPatches = lib.optionals ((platform.kernelArch or null) == "mips")
+    kernelPatches = [ kernelPatches.bridge_stp_helper ]
+      ++ lib.optionals ((platform.kernelArch or null) == "mips")
       [ kernelPatches.mips_fpureg_emu
         kernelPatches.mips_fpu_sigill
         kernelPatches.mips_ext3_n32
@@ -7266,16 +8554,28 @@ let
 
   linux_3_14 = makeOverridable (import ../os-specific/linux/kernel/linux-3.14.nix) {
     inherit fetchurl stdenv perl buildLinux;
-    kernelPatches = lib.optionals ((platform.kernelArch or null) == "mips")
+    kernelPatches = [ kernelPatches.bridge_stp_helper ]
+      ++ lib.optionals ((platform.kernelArch or null) == "mips")
       [ kernelPatches.mips_fpureg_emu
         kernelPatches.mips_fpu_sigill
         kernelPatches.mips_ext3_n32
       ];
   };
 
-  linux_3_15 = makeOverridable (import ../os-specific/linux/kernel/linux-3.15.nix) {
+  linux_3_17 = makeOverridable (import ../os-specific/linux/kernel/linux-3.17.nix) {
     inherit fetchurl stdenv perl buildLinux;
-    kernelPatches = lib.optionals ((platform.kernelArch or null) == "mips")
+    kernelPatches = [ kernelPatches.bridge_stp_helper ]
+      ++ lib.optionals ((platform.kernelArch or null) == "mips")
+      [ kernelPatches.mips_fpureg_emu
+        kernelPatches.mips_fpu_sigill
+        kernelPatches.mips_ext3_n32
+      ];
+  };
+
+  linux_3_18 = makeOverridable (import ../os-specific/linux/kernel/linux-3.18.nix) {
+    inherit fetchurl stdenv perl buildLinux;
+    kernelPatches = [ kernelPatches.bridge_stp_helper ]
+      ++ lib.optionals ((platform.kernelArch or null) == "mips")
       [ kernelPatches.mips_fpureg_emu
         kernelPatches.mips_fpu_sigill
         kernelPatches.mips_ext3_n32
@@ -7284,7 +8584,8 @@ let
 
   linux_testing = makeOverridable (import ../os-specific/linux/kernel/linux-testing.nix) {
     inherit fetchurl stdenv perl buildLinux;
-    kernelPatches = lib.optionals ((platform.kernelArch or null) == "mips")
+    kernelPatches = [ kernelPatches.bridge_stp_helper ]
+      ++ lib.optionals ((platform.kernelArch or null) == "mips")
       [ kernelPatches.mips_fpureg_emu
         kernelPatches.mips_fpu_sigill
         kernelPatches.mips_ext3_n32
@@ -7331,7 +8632,7 @@ let
      for a specific kernel.  This function can then be called for
      whatever kernel you're using. */
 
-  linuxPackagesFor = kernel: self: let callPackage = newScope self; in {
+  linuxPackagesFor = kernel: self: let callPackage = newScope self; in rec {
     inherit kernel;
 
     acpi_call = callPackage ../os-specific/linux/acpi-call {};
@@ -7356,16 +8657,16 @@ let
 
     ktap = callPackage ../os-specific/linux/ktap { };
 
-    lttngModules = callPackage ../os-specific/linux/lttng-modules { };
+    lttng-modules = callPackage ../os-specific/linux/lttng-modules { };
 
     broadcom_sta = callPackage ../os-specific/linux/broadcom-sta/default.nix { };
 
     nvidiabl = callPackage ../os-specific/linux/nvidiabl { };
 
-    nvidia_x11 = callPackage ../os-specific/linux/nvidia-x11 { };
-
     nvidia_x11_legacy173 = callPackage ../os-specific/linux/nvidia-x11/legacy173.nix { };
     nvidia_x11_legacy304 = callPackage ../os-specific/linux/nvidia-x11/legacy304.nix { };
+    nvidia_x11_legacy340 = callPackage ../os-specific/linux/nvidia-x11/legacy340.nix { };
+    nvidia_x11           = callPackage ../os-specific/linux/nvidia-x11 { };
 
     openafsClient = callPackage ../servers/openafs-client { };
 
@@ -7389,7 +8690,11 @@ let
 
     perf = callPackage ../os-specific/linux/kernel/perf.nix { };
 
+    prl-tools = callPackage ../os-specific/linux/prl-tools { };
+
     psmouse_alps = callPackage ../os-specific/linux/psmouse-alps { };
+
+    seturgent = callPackage ../os-specific/linux/seturgent { };
 
     spl = callPackage ../os-specific/linux/spl { };
     spl_git = callPackage ../os-specific/linux/spl/git.nix { };
@@ -7404,7 +8709,12 @@ let
       stdenv = stdenv_32bit;
       inherit (gnome) libIDL;
       enableExtensionPack = config.virtualbox.enableExtensionPack or false;
+      pulseSupport = config.pulseaudio or false;
     };
+
+    virtualboxHardened = lowPrio (virtualbox.override {
+      enableHardening = true;
+    });
 
     virtualboxGuestAdditions = callPackage ../applications/virtualization/virtualbox/guest-additions { };
 
@@ -7414,22 +8724,22 @@ let
 
   # The current default kernel / kernel modules.
   linux = linuxPackages.kernel;
-  linuxPackages = linuxPackages_3_12;
+  linuxPackages = linuxPackages_3_14;
 
   # Update this when adding the newest kernel major version!
-  linux_latest = pkgs.linux_3_15;
-  linuxPackages_latest = pkgs.linuxPackages_3_15;
+  linux_latest = pkgs.linux_3_18;
+  linuxPackages_latest = pkgs.linuxPackages_3_18;
 
   # Build the kernel modules for the some of the kernels.
   linuxPackages_3_2 = recurseIntoAttrs (linuxPackagesFor pkgs.linux_3_2 linuxPackages_3_2);
-  linuxPackages_3_2_xen = linuxPackagesFor pkgs.linux_3_2_xen linuxPackages_3_2_xen;
   linuxPackages_3_4 = recurseIntoAttrs (linuxPackagesFor pkgs.linux_3_4 linuxPackages_3_4);
   linuxPackages_3_6_rpi = linuxPackagesFor pkgs.linux_3_6_rpi linuxPackages_3_6_rpi;
   linuxPackages_3_10 = recurseIntoAttrs (linuxPackagesFor pkgs.linux_3_10 linuxPackages_3_10);
   linuxPackages_3_10_tuxonice = linuxPackagesFor pkgs.linux_3_10_tuxonice linuxPackages_3_10_tuxonice;
   linuxPackages_3_12 = recurseIntoAttrs (linuxPackagesFor pkgs.linux_3_12 linuxPackages_3_12);
   linuxPackages_3_14 = recurseIntoAttrs (linuxPackagesFor pkgs.linux_3_14 linuxPackages_3_14);
-  linuxPackages_3_15 = recurseIntoAttrs (linuxPackagesFor pkgs.linux_3_15 linuxPackages_3_15);
+  linuxPackages_3_17 = recurseIntoAttrs (linuxPackagesFor pkgs.linux_3_17 linuxPackages_3_17);
+  linuxPackages_3_18 = recurseIntoAttrs (linuxPackagesFor pkgs.linux_3_18 linuxPackages_3_18);
   linuxPackages_testing = recurseIntoAttrs (linuxPackagesFor pkgs.linux_testing linuxPackages_testing);
 
   # grsecurity flavors
@@ -7518,9 +8828,15 @@ let
     libpng = libpng15;
   };
 
+  nftables = callPackage ../os-specific/linux/nftables { };
+
   numactl = callPackage ../os-specific/linux/numactl { };
 
   gocode = callPackage ../development/tools/gocode { };
+
+  gotags = callPackage ../development/tools/gotags { };
+
+  golint = callPackage ../development/tools/golint { };
 
   gogoclient = callPackage ../os-specific/linux/gogoclient { };
 
@@ -7543,6 +8859,8 @@ let
   pam_ldap = callPackage ../os-specific/linux/pam_ldap { };
 
   pam_login = callPackage ../os-specific/linux/pam_login { };
+
+  pam_mount = callPackage ../os-specific/linux/pam_mount { };
 
   pam_ssh_agent_auth = callPackage ../os-specific/linux/pam_ssh_agent_auth { };
 
@@ -7587,6 +8905,8 @@ let
 
   radeontools = callPackage ../os-specific/linux/radeontools { };
 
+  radeontop = callPackage ../os-specific/linux/radeontop { };
+
   raspberrypifw = callPackage ../os-specific/linux/firmware/raspberrypi {};
 
   regionset = callPackage ../os-specific/linux/regionset { };
@@ -7604,6 +8924,13 @@ let
   setools = callPackage ../os-specific/linux/setools { };
 
   shadow = callPackage ../os-specific/linux/shadow { };
+
+  sinit = callPackage ../os-specific/linux/sinit {
+    rcinit = "/etc/rc.d/rc.init";
+    rcshutdown = "/etc/rc.d/rc.shutdown";
+  };
+
+  smem = callPackage ../os-specific/linux/smem { };
 
   statifier = builderDefsPackage (import ../os-specific/linux/statifier) { };
 
@@ -7685,6 +9012,7 @@ let
 
   udev145 = callPackage ../os-specific/linux/udev/145.nix { };
   udev = pkgs.systemd;
+  eudev = callPackage ../os-specific/linux/eudev {};
 
   udisks1 = callPackage ../os-specific/linux/udisks/1-default.nix { };
   udisks2 = callPackage ../os-specific/linux/udisks/2-default.nix { };
@@ -7694,9 +9022,9 @@ let
 
   untie = callPackage ../os-specific/linux/untie { };
 
-  upower = callPackage ../os-specific/linux/upower { };
+  upower-old = callPackage ../os-specific/linux/upower { };
 
-  upower_99 = callPackage ../os-specific/linux/upower/0.99.nix { };
+  upower = callPackage ../os-specific/linux/upower/0.99.nix { };
 
   upstart = callPackage ../os-specific/linux/upstart { };
 
@@ -7704,14 +9032,14 @@ let
 
   usermount = callPackage ../os-specific/linux/usermount { };
 
-  utillinux = lowPrio (callPackage ../os-specific/linux/util-linux {
+  utillinux = callPackage ../os-specific/linux/util-linux {
     ncurses = null;
     perl = null;
-  });
-
-  utillinuxCurses = utillinux.override {
-    inherit ncurses perl;
   };
+
+  utillinuxCurses = appendToName "curses" (utillinux.override {
+    inherit ncurses perl;
+  });
 
   v4l_utils = callPackage ../os-specific/linux/v4l-utils {
     withQt4 = true;
@@ -7821,11 +9149,15 @@ let
 
   aurulent-sans = callPackage ../data/fonts/aurulent-sans { };
 
+  baekmuk-ttf = callPackage ../data/fonts/baekmuk-ttf { };
+
   bakoma_ttf = callPackage ../data/fonts/bakoma-ttf { };
 
   cacert = callPackage ../data/misc/cacert { };
 
   cantarell_fonts = callPackage ../data/fonts/cantarell-fonts { };
+
+  comic-neue = callPackage ../data/fonts/comic-neue { };
 
   corefonts = callPackage ../data/fonts/corefonts { };
 
@@ -7841,6 +9173,8 @@ let
   dejavu_fonts = callPackage ../data/fonts/dejavu-fonts {
     inherit (perlPackages) FontTTF;
   };
+
+  dina-font = callPackage ../data/fonts/dina { };
 
   docbook5 = callPackage ../data/sgml+xml/schemas/docbook-5.0 { };
 
@@ -7870,6 +9204,8 @@ let
 
   eb-garamond = callPackage ../data/fonts/eb-garamond { };
 
+  fira = callPackage ../data/fonts/fira { };
+
   freefont_ttf = callPackage ../data/fonts/freefont-ttf { };
 
   freepats = callPackage ../data/misc/freepats { };
@@ -7880,13 +9216,25 @@ let
 
   inherit (gnome3) gsettings_desktop_schemas;
 
+  gyre-fonts = callPackage ../data/fonts/gyre {};
+
   hicolor_icon_theme = callPackage ../data/icons/hicolor-icon-theme { };
 
   inconsolata = callPackage ../data/fonts/inconsolata {};
 
+  ipafont = callPackage ../data/fonts/ipafont {};
+
   junicode = callPackage ../data/fonts/junicode { };
 
-  liberation_ttf = callPackage ../data/fonts/redhat-liberation-fonts { };
+  kochi-substitute = callPackage ../data/fonts/kochi-substitute {};
+
+  kochi-substitute-naga10 = callPackage ../data/fonts/kochi-substitute-naga10 {};
+
+  league-of-moveable-type = callPackage ../data/fonts/league-of-moveable-type {};
+
+  liberation_ttf_from_source = callPackage ../data/fonts/redhat-liberation-fonts { };
+  liberation_ttf_binary = callPackage ../data/fonts/redhat-liberation-fonts/binary.nix { };
+  liberation_ttf = liberation_ttf_binary;
 
   libertine = builderDefsPackage (import ../data/fonts/libertine) {
     inherit fetchurl fontforge lib;
@@ -7900,6 +9248,8 @@ let
 
   manpages = callPackage ../data/documentation/man-pages { };
 
+  meslo-lg = callPackage ../data/fonts/meslo-lg {};
+
   miscfiles = callPackage ../data/misc/miscfiles { };
 
   mobile_broadband_provider_info = callPackage ../data/misc/mobile-broadband-provider-info { };
@@ -7910,17 +9260,27 @@ let
 
   oldstandard = callPackage ../data/fonts/oldstandard { };
 
+  open-dyslexic = callPackage ../data/fonts/open-dyslexic { };
+
+  opensans-ttf = callPackage ../data/fonts/opensans-ttf { };
+
   poly = callPackage ../data/fonts/poly { };
 
   posix_man_pages = callPackage ../data/documentation/man-pages-posix { };
 
-  pthreadmanpages = callPackage ../data/documentation/pthread-man-pages { };
+  proggyfonts = callPackage ../data/fonts/proggyfonts { };
+
+  pthreadmanpages = callPackage ../data/documentation/pthread-man-pages {
+    perl = perl516; # syntax error at troffprepro line 49, near "do subst("
+  };
 
   shared_mime_info = callPackage ../data/misc/shared-mime-info { };
 
   shared_desktop_ontologies = callPackage ../data/misc/shared-desktop-ontologies { };
 
   stdmanpages = callPackage ../data/documentation/std-man-pages { };
+
+  stix-otf = callPackage ../data/fonts/stix-otf { };
 
   symbola = callPackage ../data/fonts/symbola { };
 
@@ -7934,7 +9294,19 @@ let
 
   r5rs = callPackage ../data/documentation/rnrs/r5rs.nix { };
 
-  sourceCodePro = callPackage ../data/fonts/source-code-pro {};
+  hasklig = callPackage ../data/fonts/hasklig {};
+
+  source-code-pro = callPackage ../data/fonts/source-code-pro {};
+
+  source-sans-pro = callPackage ../data/fonts/source-sans-pro { };
+
+  source-serif-pro = callPackage ../data/fonts/source-serif-pro { };
+
+  sourceHanSansPackages = callPackage ../data/fonts/source-han-sans { };
+  source-han-sans-japanese = sourceHanSansPackages.japanese;
+  source-han-sans-korean = sourceHanSansPackages.korean;
+  source-han-sans-simplified-chinese = sourceHanSansPackages.simplified-chinese;
+  source-han-sans-traditional-chinese = sourceHanSansPackages.traditional-chinese;
 
   tango-icon-theme = callPackage ../data/icons/tango-icon-theme { };
 
@@ -8006,7 +9378,18 @@ let
 
   aewan = callPackage ../applications/editors/aewan { };
 
+  afterstep = callPackage ../applications/window-managers/afterstep {
+    inherit (xlibs) libX11 libXext libICE;
+    fltk = fltk13;
+    gtk = gtk2;
+  };
+
   alchemy = callPackage ../applications/graphics/alchemy { };
+
+  alock = callPackage ../misc/screensavers/alock { };
+
+  alpine = callPackage ../applications/networking/mailreaders/alpine {};
+  realpine = callPackage ../applications/networking/mailreaders/realpine {};
 
   ams-lv2 = callPackage ../applications/audio/ams-lv2 { };
 
@@ -8038,6 +9421,8 @@ let
 
   milkytracker = callPackage ../applications/audio/milkytracker { };
 
+  schismtracker = callPackage ../applications/audio/schismtracker { };
+
   aumix = callPackage ../applications/audio/aumix {
     gtkGUI = false;
   };
@@ -8055,22 +9440,32 @@ let
   avxsynth = callPackage ../applications/video/avxsynth { };
 
   awesome-3-4 = callPackage ../applications/window-managers/awesome/3.4.nix {
-    lua = lua5;
     cairo = cairo.override { xcbSupport = true; };
+    lua = lua5_1;
   };
   awesome-3-5 = callPackage ../applications/window-managers/awesome {
-    lua   = lua5_1;
     cairo = cairo.override { xcbSupport = true; };
+    luaPackages = luaPackages.override { inherit lua; };
   };
   awesome = awesome-3-5;
 
   inherit (gnome3) baobab;
+
+  backintime-common = callPackage ../applications/networking/sync/backintime/common.nix { };
+
+  backintime-qt4 = callPackage ../applications/networking/sync/backintime/qt4.nix { };
+
+  backintime = backintime-qt4;
+
+  bar = callPackage ../applications/window-managers/bar { };
 
   baresip = callPackage ../applications/networking/instant-messengers/baresip {
     ffmpeg = ffmpeg_1;
   };
 
   batik = callPackage ../applications/graphics/batik { };
+
+  batti = callPackage ../applications/misc/batti { };
 
   bazaar = callPackage ../applications/version-management/bazaar { };
 
@@ -8085,18 +9480,28 @@ let
 
   bibletime = callPackage ../applications/misc/bibletime { };
 
-  bitcoin = callPackage ../applications/misc/bitcoin { };
+  bitcoin = callPackage ../applications/misc/bitcoin {};
+  bitcoind = callPackage ../applications/misc/bitcoin { gui = false; };
 
-  bitlbee = callPackage ../applications/networking/instant-messengers/bitlbee {
-    gnutls = gnutls;
-    libotr = libotr_3_2;
-  };
+  altcoins = recurseIntoAttrs (
+    (callPackage ../applications/misc/bitcoin/altcoins.nix {}) //
+    (callPackage ../applications/misc/bitcoin/dogecoin.nix {}) //
+    (callPackage ../applications/misc/bitcoin/litecoin.nix {})
+  );
+
+  bitlbee = callPackage ../applications/networking/instant-messengers/bitlbee { };
 
   blender = callPackage  ../applications/misc/blender {
-    python = python3;
+    python = python34;
+  };
+
+  bluefish = callPackage ../applications/editors/bluefish {
+    gtk = gtk3;
   };
 
   bristol = callPackage ../applications/audio/bristol { };
+
+  bspwm = callPackage ../applications/window-managers/bspwm { };
 
   bvi = callPackage ../applications/editors/bvi { };
 
@@ -8104,7 +9509,9 @@ let
       inherit (gnome) libglade;
   };
 
-  calibre = callPackage ../applications/misc/calibre { };
+  calibre = callPackage ../applications/misc/calibre {
+    inherit (pythonPackages) pyqt5 sip_4_16;
+  };
 
   camlistore = callPackage ../applications/misc/camlistore { };
 
@@ -8117,6 +9524,8 @@ let
     inherit (xlibs) libXScrnSaver scrnsaverproto libX11 xproto kbproto;
   };
   funpidgin = carrier;
+
+  cava = callPackage ../applications/audio/cava { };
 
   cc1394 = callPackage ../applications/video/cc1394 { };
 
@@ -8138,33 +9547,45 @@ let
 
   chatzilla = callPackage ../applications/networking/irc/chatzilla { };
 
-  chromium = lowPrio (callPackage ../applications/networking/browsers/chromium {
+  chromium = callPackage ../applications/networking/browsers/chromium {
     channel = "stable";
     pulseSupport = config.pulseaudio or true;
     enablePepperFlash = config.chromium.enablePepperFlash or false;
-    enablePepperPDF = config.chromium.enablePepperPDF or false;
-  });
+    enableWideVine = config.chromium.enableWideVine or false;
+    hiDPISupport = config.chromium.hiDPISupport or false;
+  };
+
+  chronos = callPackage ../applications/networking/cluster/chronos { };
 
   chromiumBeta = lowPrio (chromium.override { channel = "beta"; });
-  chromiumBetaWrapper = lowPrio (wrapChromium chromiumBeta);
 
   chromiumDev = lowPrio (chromium.override { channel = "dev"; });
-  chromiumDevWrapper = lowPrio (wrapChromium chromiumDev);
 
-  chromiumWrapper = wrapChromium chromium;
+  chuck = callPackage ../applications/audio/chuck { };
 
   cinelerra = callPackage ../applications/video/cinelerra { };
+
+  clawsMail = callPackage ../applications/networking/mailreaders/claws-mail {
+    enableNetworkManager = config.networking.networkmanager.enable or false;
+  };
+
+  clipit = callPackage ../applications/misc/clipit { };
+
+  cmplayer = callPackage ../applications/video/cmplayer {
+    pulseSupport = config.pulseaudio or false;
+  };
 
   cmus = callPackage ../applications/audio/cmus { };
 
   compiz = callPackage ../applications/window-managers/compiz {
     inherit (gnome) GConf ORBit2 metacity;
-    boost = boost149; # https://bugs.launchpad.net/compiz/+bug/1131864
   };
 
   coriander = callPackage ../applications/video/coriander {
     inherit (gnome) libgnomeui GConf;
   };
+
+  cortex = callPackage ../applications/misc/cortex { };
 
   csound = callPackage ../applications/audio/csound { };
 
@@ -8204,22 +9625,21 @@ let
 
   d4x = callPackage ../applications/misc/d4x { };
 
-  darcs = haskellPackages.darcs.override {
-    # A variant of the Darcs derivation that containts only the executable and
-    # thus has no dependencies on other Haskell packages.
-    cabal = haskellPackages.cabal.override {
-      extension = self : super : {
-        isLibrary = false;
-        configureFlags = "-f-library " + super.configureFlags or "";
-      };
-    };
-  };
+  darcs = haskell-ng.lib.overrideCabal haskellngPackages.darcs (drv: {
+    configureFlags = (stdenv.lib.remove "-flibrary" drv.configureFlags or []) ++ ["-f-library"];
+    enableSharedExecutables = false;
+    isLibrary = false;
+  });
 
   darktable = callPackage ../applications/graphics/darktable {
     inherit (gnome) GConf libglade;
   };
 
   dd-agent = callPackage ../tools/networking/dd-agent { inherit (pythonPackages) tornado; };
+
+  deadbeef = callPackage ../applications/audio/deadbeef {
+    pulseSupport = config.pulseaudio or true;
+  };
 
   dia = callPackage ../applications/graphics/dia {
     inherit (pkgs.gnome) libart_lgpl libgnomeui;
@@ -8240,24 +9660,34 @@ let
     enableXft = config.dmenu.enableXft or false;
   };
 
-  dmtx = builderDefsPackage (import ../tools/graphics/dmtx) {
-    inherit libpng libtiff libjpeg imagemagick librsvg
-      pkgconfig bzip2 zlib libtool freetype fontconfig
-      ghostscript jasper xz;
-    inherit (xlibs) libX11;
+  dmenu2 = callPackage ../applications/misc/dmenu2 { };
+
+  dmtx = dmtx-utils;
+
+  dmtx-utils = callPackage (import ../tools/graphics/dmtx-utils) {
   };
 
-  docker = callPackage ../applications/virtualization/docker { };
+  docker = callPackage ../applications/virtualization/docker {
+    go = go_1_3;
+  };
 
   doodle = callPackage ../applications/search/doodle { };
 
+  drumgizmo = callPackage ../applications/audio/drumgizmo { inherit (xlibs) libX11; };
+
   dunst = callPackage ../applications/misc/dunst { };
+
+  devede = callPackage ../applications/video/devede { };
 
   dvb_apps  = callPackage ../applications/video/dvb-apps { };
 
   dvdauthor = callPackage ../applications/video/dvdauthor { };
 
-  dwb = callPackage ../applications/networking/browsers/dwb { };
+  dwb = callPackage ../applications/networking/browsers/dwb { dconf = gnome3.dconf; };
+
+  dwbWrapper = wrapFirefox
+    { browser = dwb; browserName = "dwb"; desktopName = "dwb";
+    };
 
   dwm = callPackage ../applications/window-managers/dwm {
     patches = config.dwm.patches or [];
@@ -8281,49 +9711,26 @@ let
 
   emacs = emacs24;
 
-  emacs23 = callPackage ../applications/editors/emacs-23 {
-    stdenv =
-      if stdenv.isDarwin
-      /* On Darwin, use Apple-GCC, otherwise:
-           configure: error: C preprocessor "cc -E -no-cpp-precomp" fails sanity check */
-      then overrideGCC stdenv gccApple
-      else stdenv;
-
-    # use override to select the appropriate gui toolkit
-    libXaw = if stdenv.isDarwin then xlibs.libXaw else null;
-    Xaw3d = null;
-    gtk = if stdenv.isDarwin then null else gtk;
-    # TODO: these packages don't build on Darwin.
-    gconf = null /* if stdenv.isDarwin then null else gnome.GConf */;
-    librsvg = null /* if stdenv.isDarwin then null else librsvg */;
-    texinfo = texinfo4;
-  };
-
   emacs24 = callPackage ../applications/editors/emacs-24 {
     # use override to enable additional features
     libXaw = xlibs.libXaw;
     Xaw3d = null;
     gconf = null;
-    librsvg = null;
     alsaLib = null;
     imagemagick = null;
-
-    # resolve unrecognized section __static_data in __DATA segment
-    stdenv = if stdenv.isDarwin
-      then clangStdenv
-      else stdenv;
   };
 
   emacs24-nox = lowPrio (appendToName "nox" (emacs24.override {
     withX = false;
   }));
 
-  emacs24Macport = callPackage ../applications/editors/emacs-24/macport.nix {
-    # resolve unrecognised flag '-fconstant-cfstrings' errors
-    stdenv = if stdenv.isDarwin
-      then clangStdenv
-      else stdenv;
-  };
+  emacs24Macport_24_3 = lowPrio (callPackage ../applications/editors/emacs-24/macport-24.3.nix {
+    stdenv = pkgs.clangStdenv;
+  });
+  emacs24Macport_24_4 = lowPrio (callPackage ../applications/editors/emacs-24/macport-24.4.nix {
+    stdenv = pkgs.clangStdenv;
+  });
+  emacs24Macport = self.emacs24Macport_24_4;
 
   emacsPackages = emacs: self: let callPackage = newScope self; in rec {
     inherit emacs;
@@ -8331,6 +9738,8 @@ let
     autoComplete = callPackage ../applications/editors/emacs-modes/auto-complete { };
 
     bbdb = callPackage ../applications/editors/emacs-modes/bbdb { };
+
+    bbdb3 = callPackage ../applications/editors/emacs-modes/bbdb/3.nix {};
 
     cedet = callPackage ../applications/editors/emacs-modes/cedet { };
 
@@ -8340,15 +9749,19 @@ let
 
     colorTheme = callPackage ../applications/editors/emacs-modes/color-theme { };
 
+    colorThemeSolarized = callPackage ../applications/editors/emacs-modes/color-theme-solarized { };
+
     cryptol = callPackage ../applications/editors/emacs-modes/cryptol { };
 
     cua = callPackage ../applications/editors/emacs-modes/cua { };
 
+    d = callPackage ../applications/editors/emacs-modes/d { };
+
     darcsum = callPackage ../applications/editors/emacs-modes/darcsum { };
 
-    # ecb = callPackage ../applications/editors/emacs-modes/ecb { };
+    dash = callPackage ../applications/editors/emacs-modes/dash { };
 
-    jabber = callPackage ../applications/editors/emacs-modes/jabber { };
+    # ecb = callPackage ../applications/editors/emacs-modes/ecb { };
 
     emacsClangCompleteAsync = callPackage ../applications/editors/emacs-modes/emacs-clang-complete-async { };
 
@@ -8357,6 +9770,8 @@ let
     emacsw3m = callPackage ../applications/editors/emacs-modes/emacs-w3m { };
 
     emms = callPackage ../applications/editors/emacs-modes/emms { };
+
+    ensime = callPackage ../applications/editors/emacs-modes/ensime { };
 
     ess = callPackage ../applications/editors/emacs-modes/ess { };
 
@@ -8368,31 +9783,28 @@ let
 
     gist = callPackage ../applications/editors/emacs-modes/gist { };
 
-    idris = callPackage ../applications/editors/emacs-modes/idris { };
-
-    jade = callPackage ../applications/editors/emacs-modes/jade { };
-
-    jdee = callPackage ../applications/editors/emacs-modes/jdee {
-      # Requires Emacs 23, for `avl-tree'.
-    };
-
-    js2 = callPackage ../applications/editors/emacs-modes/js2 { };
-
-    stratego = callPackage ../applications/editors/emacs-modes/stratego { };
+    gitModes = callPackage ../applications/editors/emacs-modes/git-modes { };
 
     haskellMode = callPackage ../applications/editors/emacs-modes/haskell { };
+    haskellModeGit = lowPrio (callPackage ../applications/editors/emacs-modes/haskell/git.nix { });
 
-    ocamlMode = callPackage ../applications/editors/emacs-modes/ocaml { };
-
-    structuredHaskellMode = callPackage ../applications/editors/emacs-modes/structured-haskell-mode {
-      inherit (haskellPackages) cabal haskellSrcExts;
-    };
-
-    tuaregMode = callPackage ../applications/editors/emacs-modes/tuareg { };
+    hsc3Mode = callPackage ../applications/editors/emacs-modes/hsc3 { };
 
     hol_light_mode = callPackage ../applications/editors/emacs-modes/hol_light { };
 
     htmlize = callPackage ../applications/editors/emacs-modes/htmlize { };
+
+    icicles = callPackage ../applications/editors/emacs-modes/icicles { };
+
+    idris = callPackage ../applications/editors/emacs-modes/idris { };
+
+    jabber = callPackage ../applications/editors/emacs-modes/jabber { };
+
+    jade = callPackage ../applications/editors/emacs-modes/jade { };
+
+    jdee = callPackage ../applications/editors/emacs-modes/jdee { };
+
+    js2 = callPackage ../applications/editors/emacs-modes/js2 { };
 
     logito = callPackage ../applications/editors/emacs-modes/logito { };
 
@@ -8404,7 +9816,9 @@ let
 
     metaweblog = callPackage ../applications/editors/emacs-modes/metaweblog { };
 
-    notmuch = lowPrio (callPackage ../applications/networking/mailreaders/notmuch { });
+    notmuch = lowPrio (pkgs.notmuch.override { inherit emacs; });
+
+    ocamlMode = callPackage ../applications/editors/emacs-modes/ocaml { };
 
     offlineimap = callPackage ../applications/editors/emacs-modes/offlineimap {};
 
@@ -8436,28 +9850,44 @@ let
 
     quack = callPackage ../applications/editors/emacs-modes/quack { };
 
+    rainbowDelimiters = callPackage ../applications/editors/emacs-modes/rainbow-delimiters { };
+
     rectMark = callPackage ../applications/editors/emacs-modes/rect-mark { };
 
     remember = callPackage ../applications/editors/emacs-modes/remember { };
 
     rudel = callPackage ../applications/editors/emacs-modes/rudel { };
 
+    s = callPackage ../applications/editors/emacs-modes/s { };
+
     sbtMode = callPackage ../applications/editors/emacs-modes/sbt-mode { };
 
     scalaMode1 = callPackage ../applications/editors/emacs-modes/scala-mode/v1.nix { };
     scalaMode2 = callPackage ../applications/editors/emacs-modes/scala-mode/v2.nix { };
 
+    stratego = callPackage ../applications/editors/emacs-modes/stratego { };
+
+    structuredHaskellMode = callPackage ../applications/editors/emacs-modes/structured-haskell-mode {
+      inherit (haskellPackages) cabal ;
+      haskellSrcExts = haskellPackages.haskellSrcExts_1_15_0_1;
+    };
+
     sunriseCommander = callPackage ../applications/editors/emacs-modes/sunrise-commander { };
+
+    tuaregMode = callPackage ../applications/editors/emacs-modes/tuareg { };
 
     writeGood = callPackage ../applications/editors/emacs-modes/writegood { };
 
     xmlRpc = callPackage ../applications/editors/emacs-modes/xml-rpc { };
+
+    cask = callPackage ../applications/editors/emacs-modes/cask { };
   };
 
-  emacs23Packages = emacsPackages emacs23 pkgs.emacs23Packages;
   emacs24Packages = recurseIntoAttrs (emacsPackages emacs24 pkgs.emacs24Packages);
 
   inherit (gnome3) empathy;
+
+  enhanced-ctorrent = callPackage ../applications/networking/enhanced-ctorrent { };
 
   epdfview = callPackage ../applications/misc/epdfview { };
 
@@ -8471,6 +9901,10 @@ let
 
   etherape = callPackage ../applications/networking/sniffers/etherape {
     inherit (gnome) gnomedocutils libgnome libglade libgnomeui scrollkeeper;
+  };
+
+  evilvte = callPackage ../applications/misc/evilvte {
+    configH = config.evilvte.config or "";
   };
 
   evopedia = callPackage ../applications/misc/evopedia { };
@@ -8499,13 +9933,23 @@ let
 
   fluidsynth = callPackage ../applications/audio/fluidsynth { };
 
+  fmit = callPackage ../applications/audio/fmit { };
+
+  focuswriter = callPackage ../applications/editors/focuswriter { };
+
   fossil = callPackage ../applications/version-management/fossil { };
 
+  freewheeling = callPackage ../applications/audio/freewheeling { };
+
   fribid = callPackage ../applications/networking/browsers/mozilla-plugins/fribid { };
+
+  fritzing = callPackage ../applications/science/electronics/fritzing { };
 
   fvwm = callPackage ../applications/window-managers/fvwm { };
 
   geany = callPackage ../applications/editors/geany { };
+
+  gksu = callPackage ../applications/misc/gksu { };
 
   gnuradio = callPackage ../applications/misc/gnuradio {
     inherit (pythonPackages) lxml numpy scipy matplotlib pyopengl;
@@ -8515,6 +9959,8 @@ let
   gnuradio-osmosdr = callPackage ../applications/misc/gnuradio-osmosdr { };
 
   goldendict = callPackage ../applications/misc/goldendict { };
+
+  google-drive-ocamlfuse = callPackage ../applications/networking/google-drive-ocamlfuse { };
 
   google-musicmanager = callPackage ../applications/audio/google-musicmanager { };
 
@@ -8553,7 +9999,13 @@ let
 
   wavesurfer = callPackage ../applications/misc/audio/wavesurfer { };
 
-  wireshark = callPackage ../applications/networking/sniffers/wireshark { };
+  wireshark-cli = callPackage ../applications/networking/sniffers/wireshark {
+    withQt = false;
+    withGtk = false;
+  };
+  wireshark-gtk = wireshark-cli.override { withGtk = true; };
+  wireshark-qt = wireshark-cli.override { withQt = true; };
+  wireshark = wireshark-gtk;
 
   wvdial = callPackage ../os-specific/linux/wvdial { };
 
@@ -8565,36 +10017,35 @@ let
 
   filezilla = callPackage ../applications/networking/ftp/filezilla { };
 
-  firefox = pkgs.firefoxPkgs.firefox;
-
-  firefox36Pkgs = callPackage ../applications/networking/browsers/firefox/3.6.nix {
-    inherit (gnome) libIDL;
-  };
-
-  firefox36Wrapper = wrapFirefox { browser = firefox36Pkgs.firefox; };
-
-  firefox13Pkgs = callPackage ../applications/networking/browsers/firefox/13.0.nix {
-    inherit (gnome) libIDL;
-  };
-
-  firefox13Wrapper = wrapFirefox { browser = firefox13Pkgs.firefox; };
-
-  firefoxPkgs = callPackage ../applications/networking/browsers/firefox {
+  firefox = callPackage ../applications/networking/browsers/firefox {
     inherit (gnome) libIDL;
     inherit (pythonPackages) pysqlite;
-    libpng = libpng.override { apngSupport = true; };
   };
 
-  firefoxWrapper = wrapFirefox { browser = firefoxPkgs.firefox; };
+  firefoxWrapper = wrapFirefox { browser = pkgs.firefox; };
+
+  firefox-bin = callPackage ../applications/networking/browsers/firefox-bin {
+    gconf = pkgs.gnome.GConf;
+    inherit (pkgs.gnome) libgnome libgnomeui;
+    inherit (pkgs.xlibs) libX11 libXScrnSaver libXcomposite libXdamage libXext
+      libXfixes libXinerama libXrender libXt;
+  };
 
   flac = callPackage ../applications/audio/flac { };
 
   flashplayer = callPackage ../applications/networking/browsers/mozilla-plugins/flashplayer-11 {
     debug = config.flashplayer.debug or false;
-    # !!! Fix the dependency on two different builds of nss.
+  };
+
+  fluxbox = callPackage ../applications/window-managers/fluxbox { };
+
+  fme = callPackage ../applications/misc/fme {
+    inherit (gnome) libglademm;
+    inherit pkgconfig autoconf automake gettext;
   };
 
   freecad = callPackage ../applications/graphics/freecad {
+    boost = boost156;
     opencascade = opencascade_6_5;
     inherit (pythonPackages) matplotlib pycollada;
   };
@@ -8619,12 +10070,11 @@ let
 
   freicoin = callPackage ../applications/misc/freicoin { };
 
-  fspot = callPackage ../applications/graphics/f-spot {
-    inherit (gnome) libgnome libgnomeui;
-    gtksharp = gtksharp1;
-  };
-
   fuze = callPackage ../applications/networking/instant-messengers/fuze {};
+
+  game-music-emu = callPackage ../applications/audio/game-music-emu { };
+
+  gcolor2 = callPackage ../applications/graphics/gcolor2 { };
 
   get_iplayer = callPackage ../applications/misc/get_iplayer {};
 
@@ -8646,6 +10096,10 @@ let
   });
   git = gitAndTools.git;
   gitFull = gitAndTools.gitFull;
+  gitMinimal = git.override {
+    withManual = false;
+    pythonSupport = false;
+  };
   gitSVN = gitAndTools.gitSVN;
 
   gitRepo = callPackage ../applications/version-management/git-repo {
@@ -8670,21 +10124,26 @@ let
     goffice = goffice_0_8;
   };
 
-  goffice_0_8 = callPackage ../desktops/gnome-3/3.10/misc/goffice/0.8.nix {
+  goffice_0_8 = callPackage ../desktops/gnome-3/3.12/misc/goffice/0.8.nix {
     inherit (gnome2) libglade libgnomeui;
     gconf = gnome2.GConf;
     libart = gnome2.libart_lgpl;
   }; # latest version: gnome3.goffice
 
-  ideas = recurseIntoAttrs (callPackage ../applications/editors/idea { });
+  idea = recurseIntoAttrs (callPackage ../applications/editors/idea { });
 
   libquvi = callPackage ../applications/video/quvi/library.nix { };
+
+  linssid = callPackage ../applications/networking/linssid { };
 
   mi2ly = callPackage ../applications/audio/mi2ly {};
 
   praat = callPackage ../applications/audio/praat { };
 
-  quvi = callPackage ../applications/video/quvi/tool.nix { };
+  quvi = callPackage ../applications/video/quvi/tool.nix {
+    lua5_sockets = lua5_1_sockets;
+    lua5 = lua5_1;
+  };
 
   quvi_scripts = callPackage ../applications/video/quvi/scripts.nix { };
 
@@ -8695,7 +10154,6 @@ let
   gmu = callPackage ../applications/audio/gmu { };
 
   gnash = callPackage ../applications/video/gnash {
-    xulrunner = firefoxPkgs.xulrunner;
     inherit (gnome) gtkglext;
   };
 
@@ -8727,6 +10185,8 @@ let
     inherit libgphoto2 fuse pkgconfig glib libtool;
   };
 
+  gramps = callPackage ../applications/misc/gramps { };
+
   graphicsmagick = callPackage ../applications/graphics/graphicsmagick { };
   graphicsmagick_q16 = callPackage ../applications/graphics/graphicsmagick { quantumdepth = 16; };
 
@@ -8735,6 +10195,7 @@ let
   };
 
   gtkpod = callPackage ../applications/audio/gtkpod {
+    gnome = gnome3;
     inherit (gnome) libglade;
   };
 
@@ -8760,7 +10221,9 @@ let
 
   gqview = callPackage ../applications/graphics/gqview { };
 
-  gmpc = callPackage ../applications/audio/gmpc { };
+  gmpc = callPackage ../applications/audio/gmpc {
+    inherit (xlibs) libSM libICE;
+  };
 
   gmtk = callPackage ../applications/networking/browsers/mozilla-plugins/gmtk {
     inherit (gnome) GConf;
@@ -8772,9 +10235,7 @@ let
     libpng = libpng12;
   };
 
-  gosmore = builderDefsPackage ../applications/misc/gosmore {
-    inherit fetchsvn curl pkgconfig libxml2 gtk;
-  };
+  gosmore = callPackage ../applications/misc/gosmore { };
 
   gpsbabel = callPackage ../applications/misc/gpsbabel { };
 
@@ -8782,7 +10243,13 @@ let
 
   gpsd = callPackage ../servers/gpsd { };
 
-  guitone = callPackage ../applications/version-management/guitone { };
+  gtk2fontsel = callPackage ../applications/misc/gtk2fontsel {
+    inherit (gnome2) gtk;
+  };
+
+  guitone = callPackage ../applications/version-management/guitone {
+    graphviz = graphviz_2_32;
+  };
 
   gv = callPackage ../applications/misc/gv { };
 
@@ -8804,7 +10271,9 @@ let
     fltk = fltk13;
   };
 
-  hugin = callPackage ../applications/graphics/hugin { };
+  hugin = callPackage ../applications/graphics/hugin {
+    boost = boost155;
+  };
 
   hydrogen = callPackage ../applications/audio/hydrogen { };
 
@@ -8821,26 +10290,6 @@ let
 
   i810switch = callPackage ../os-specific/linux/i810switch { };
 
-  icecat3 = lowPrio (callPackage ../applications/networking/browsers/icecat-3 {
-    inherit (gnome) libIDL libgnomeui gnome_vfs;
-    inherit (xlibs) pixman;
-    inherit (pythonPackages) ply;
-  });
-
-  icecatXulrunner3 = lowPrio (callPackage ../applications/networking/browsers/icecat-3 {
-    application = "xulrunner";
-    inherit (gnome) libIDL libgnomeui gnome_vfs;
-    inherit (xlibs) pixman;
-    inherit (pythonPackages) ply;
-  });
-
-  icecat3Xul =
-    (symlinkJoin "icecat-with-xulrunner-${icecat3.version}"
-       [ icecat3 icecatXulrunner3 ])
-    // { inherit (icecat3) gtk isFirefox3Like meta; };
-
-  icecat3Wrapper = wrapFirefox { browser = icecat3Xul; browserName = "icecat"; desktopName = "IceCat"; };
-
   icewm = callPackage ../applications/window-managers/icewm { };
 
   id3v2 = callPackage ../applications/audio/id3v2 { };
@@ -8849,7 +10298,7 @@ let
 
   ii = callPackage ../applications/networking/irc/ii { };
 
-  ike = callPackage ../applications/ike { };
+  ike = callPackage ../applications/networking/ike { };
 
   ikiwiki = callPackage ../applications/misc/ikiwiki {
     inherit (perlPackages) TextMarkdown URI HTMLParser HTMLScrubber
@@ -8870,6 +10319,8 @@ let
     # XXX These are the PyOpenGL dependencies, which we need here.
     inherit (pythonPackages) pyopengl;
   };
+
+  inferno = callPackage_i686 ../applications/inferno { };
 
   inkscape = callPackage ../applications/graphics/inkscape {
     inherit (pythonPackages) lxml;
@@ -8919,11 +10370,23 @@ let
     inherit (pythonPackages) lxml;
   };
 
+  jumanji = callPackage ../applications/networking/browsers/jumanji {
+    webkitgtk = webkitgtk24x;
+    gtk = gtk3;
+  };
+
   jwm = callPackage ../applications/window-managers/jwm { };
 
   k3d = callPackage ../applications/graphics/k3d {
     inherit (pkgs.gnome2) gtkglext;
+    boost = boost155;
   };
+
+  kdeApps_14_12 = recurseIntoAttrs (callPackage ../applications/kde-apps-14.12 {
+    stdenv = overrideGCC stdenv gccStdInc;
+  });
+  kdeApps_latest = kdeApps_14_12;
+  kdeApps_stable = kdeApps_14_12;
 
   keepnote = callPackage ../applications/office/keepnote {
     pygtk = pyGtkGlade;
@@ -8933,9 +10396,17 @@ let
 
   keymon = callPackage ../applications/video/key-mon { };
 
+  kid3 = callPackage ../applications/audio/kid3 {
+    qt = qt4;
+  };
+
   kino = callPackage ../applications/video/kino {
     inherit (gnome) libglade;
   };
+
+  koji = callPackage ../tools/package-management/koji { };
+
+  kubernetes = callPackage ../applications/networking/cluster/kubernetes { };
 
   lame = callPackage ../applications/audio/lame { };
 
@@ -8957,11 +10428,15 @@ let
 
   lbdb = callPackage ../tools/misc/lbdb { };
 
+  lbzip2 = callPackage ../tools/compression/lbzip2 { };
+
   lci = callPackage ../applications/science/logic/lci {};
 
   ldcpp = callPackage ../applications/networking/p2p/ldcpp {
     inherit (gnome) libglade;
   };
+
+  libowfat = callPackage ../development/libraries/libowfat { };
 
   librecad = callPackage ../applications/misc/librecad { };
 
@@ -8971,8 +10446,8 @@ let
     inherit (perlPackages) ArchiveZip CompressZlib;
     inherit (gnome) GConf ORBit2 gnome_vfs;
     zip = zip.override { enableNLS = false; };
-    boost = boost149;
-    jdk = openjdk;
+    boost = boost155;
+    glm = glm_0954;
     fontsConf = makeFontsConf {
       fontDirectories = [
         freefont_ttf xorg.fontmiscmisc xorg.fontbhttf
@@ -8980,10 +10455,14 @@ let
     };
     clucene_core = clucene_core_2;
     lcms = lcms2;
-    mdds = mdds_0_7_1;
+    harfbuzz = harfbuzz.override {
+      withIcu = true; withGraphite2 = true;
+    };
   };
 
-  liferea = callPackage ../applications/networking/newsreaders/liferea { };
+  liferea = callPackage ../applications/networking/newsreaders/liferea {
+    webkitgtk = webkitgtk24x;
+  };
 
   lingot = callPackage ../applications/audio/lingot {
     inherit (gnome) libglade;
@@ -8991,8 +10470,11 @@ let
 
   links = callPackage ../applications/networking/browsers/links { };
 
-  ledger = callPackage ../applications/office/ledger/2.6.3.nix { };
-  ledger3 = callPackage ../applications/office/ledger/3.0.nix { };
+  ledger2 = callPackage ../applications/office/ledger/2.6.3.nix { };
+  ledger3 = callPackage ../applications/office/ledger { };
+  ledger = ledger3;
+
+  lighttable = callPackage ../applications/editors/lighttable {};
 
   links2 = callPackage ../applications/networking/browsers/links2 { };
 
@@ -9006,13 +10488,27 @@ let
     bison = bison2;
   };
 
-  llpp = callPackage ../applications/misc/llpp { inherit (ocamlPackages) lablgl; };
+  llpp = callPackage ../applications/misc/llpp {
+    inherit (ocamlPackages_4_02_1) lablgl findlib;
+    ocaml = ocaml_4_02_1;
+  };
 
   lmms = callPackage ../applications/audio/lmms { };
 
+  lrzsz = callPackage ../tools/misc/lrzsz { };
+
+  luminanceHDR = callPackage ../applications/graphics/luminance-hdr { };
+
   lxdvdrip = callPackage ../applications/video/lxdvdrip { };
 
-  handbrake = callPackage ../applications/video/handbrake { };
+  handbrake = callPackage ../applications/video/handbrake {
+    webkitgtk = webkitgtk24x;
+  };
+
+  lilyterm = callPackage ../applications/misc/lilyterm {
+    inherit (gnome) vte;
+    gtk = gtk2;
+  };
 
   lynx = callPackage ../applications/networking/browsers/lynx { };
 
@@ -9026,10 +10522,11 @@ let
 
   mda_lv2 = callPackage ../applications/audio/mda-lv2 { };
 
-  meld = callPackage ../applications/version-management/meld {
-    inherit (gnome) scrollkeeper;
-    pygtk = pyGtkGlade;
-  };
+  mediainfo = callPackage ../applications/misc/mediainfo { };
+
+  mediainfo-gui = callPackage ../applications/misc/mediainfo-gui { };
+
+  meld = callPackage ../applications/version-management/meld { };
 
   mcomix = callPackage ../applications/graphics/mcomix { };
 
@@ -9044,11 +10541,15 @@ let
 
   meshlab = callPackage ../applications/graphics/meshlab { };
 
+  metersLv2 = callPackage ../applications/audio/meters_lv2 { };
+
   mhwaveedit = callPackage ../applications/audio/mhwaveedit {};
 
   mid2key = callPackage ../applications/audio/mid2key { };
 
-  midori = callPackage ../applications/networking/browsers/midori { };
+  midori = callPackage ../applications/networking/browsers/midori {
+    webkitgtk = webkitgtk24x;
+  };
 
   midoriWrapper = wrapFirefox
     { browser = midori; browserName = "midori"; desktopName = "Midori";
@@ -9063,40 +10564,43 @@ let
 
   minidjvu = callPackage ../applications/graphics/minidjvu { };
 
+  mimms = callPackage ../applications/audio/mimms {};
+
   mirage = callPackage ../applications/graphics/mirage {};
 
   mixxx = callPackage ../applications/audio/mixxx {
     inherit (vamp) vampSDK;
   };
 
+  mjpg-streamer = callPackage ../applications/video/mjpg-streamer { };
+
   mmex = callPackage ../applications/office/mmex { };
 
   moc = callPackage ../applications/audio/moc { };
 
+  monero = callPackage ../applications/misc/monero { };
+
   monkeysAudio = callPackage ../applications/audio/monkeys-audio { };
 
-  monodevelop = callPackage ../applications/editors/monodevelop {
-    inherit (gnome) gnome_vfs libbonobo libglade libgnome GConf;
-    mozilla = firefox;
-    gtksharp = gtksharp2;
-  };
-
-  monodoc = callPackage ../applications/editors/monodoc {
-    gtksharp = gtksharp1;
-  };
+  monodevelop = callPackage ../applications/editors/monodevelop {};
 
   monotone = callPackage ../applications/version-management/monotone {
     lua = lua5;
-    boost = boost149;
   };
 
   monotoneViz = builderDefsPackage (import ../applications/version-management/monotone-viz/mtn-head.nix) {
-    inherit ocaml graphviz pkgconfig autoconf automake libtool glib gtk;
-    inherit (ocamlPackages) lablgtk;
+    inherit graphviz pkgconfig autoconf automake libtool glib gtk;
+    inherit (ocamlPackages_4_01_0) lablgtk ocaml;
     inherit (gnome) libgnomecanvas;
   };
 
   mopidy = callPackage ../applications/audio/mopidy { };
+
+  mopidy-spotify = callPackage ../applications/audio/mopidy-spotify { };
+
+  mopidy-moped = callPackage ../applications/audio/mopidy-moped { };
+
+  mopidy-mopify = callPackage ../applications/audio/mopidy-mopify { };
 
   mozilla = callPackage ../applications/networking/browsers/mozilla {
     inherit (gnome) libIDL;
@@ -9107,9 +10611,15 @@ let
     inherit (xlibs) libX11 xproto;
   };
 
-  easytag = callPackage ../applications/audio/easytag { };
+  easytag = callPackage ../applications/audio/easytag {
+    inherit (gnome3) gnome_icon_theme dconf;
+  };
+
+  mp3gain = callPackage ../applications/audio/mp3gain { };
 
   mp3info = callPackage ../applications/audio/mp3info { };
+
+  mp3splt = callPackage ../applications/audio/mp3splt { };
 
   mpc123 = callPackage ../applications/audio/mpc123 { };
 
@@ -9130,7 +10640,9 @@ let
     vdpauSupport = config.mplayer.vdpauSupport or false;
   };
 
-  mplayer2 = callPackage ../applications/video/mplayer2 { };
+  mplayer2 = callPackage ../applications/video/mplayer2 {
+    ffmpeg = libav_9; # see https://trac.macports.org/ticket/44386
+  };
 
   MPlayerPlugin = browser:
     import ../applications/networking/browsers/mozilla-plugins/mplayerplug-in {
@@ -9142,12 +10654,18 @@ let
 
   mpv = callPackage ../applications/video/mpv {
     lua = lua5_1;
-    bs2bSupport = true;
-    quviSupport = true;
-    cacaSupport = true;
+    lua5_sockets = lua5_1_sockets;
+    bs2bSupport = config.mpv.bs2bSupport or true;
+    youtubeSupport = config.mpv.youtubeSupport or true;
+    cacaSupport = config.mpv.cacaSupport or true;
+    vaapiSupport = config.mpv.vaapiSupport or false;
   };
 
   mrxvt = callPackage ../applications/misc/mrxvt { };
+
+  mudlet = callPackage ../games/mudlet {
+    inherit (lua51Packages) luafilesystem lrexlib luazip luasqlite3;
+  };
 
   multisync = callPackage ../applications/misc/multisync {
     inherit (gnome) ORBit2 libbonobo libgnomeui GConf;
@@ -9159,6 +10677,7 @@ let
     };
     jackSupport = config.mumble.jackSupport or false;
     speechdSupport = config.mumble.speechdSupport or false;
+    pulseSupport = config.pulseaudio or false;
   };
 
   murmur = callPackage ../applications/networking/mumble/murmur.nix {
@@ -9168,43 +10687,33 @@ let
     iceSupport = config.murmur.iceSupport or true;
   };
 
+  musescore = callPackage ../applications/audio/musescore { };
+
   mutt = callPackage ../applications/networking/mailreaders/mutt { };
+  mutt-with-sidebar = callPackage ../applications/networking/mailreaders/mutt {
+    withSidebar = true;
+  };
+
+  namecoin = callPackage ../applications/misc/namecoin { };
+  namecoinqt = callPackage ../applications/misc/namecoin/qt.nix { };
 
   pcmanfm = callPackage ../applications/misc/pcmanfm { };
 
-  ruby_gpgme = callPackage ../development/libraries/ruby_gpgme {
-    ruby = ruby19;
-    hoe = rubyLibs.hoe;
-  };
-
-  ruby_ncursesw_sup = callPackage ../development/libraries/ruby_ncursesw_sup { };
+  shotcut = callPackage ../applications/video/shotcut { mlt = mlt-qt5; };
 
   smplayer = callPackage ../applications/video/smplayer { };
 
-  sup = with rubyLibs; callPackage ../applications/networking/mailreaders/sup {
-    ruby = ruby19.override {
-      cursesSupport = true;
-    };
+  smtube = callPackage ../applications/video/smtube {};
 
-    inherit gettext highline iconv locale lockfile rmail_sup
-      text trollop unicode xapian_ruby which;
-
-    # See https://github.com/NixOS/nixpkgs/issues/1804 and
-    # https://github.com/NixOS/nixpkgs/issues/2146
-    bundler = pkgs.lib.overrideDerivation pkgs.rubyLibs.bundler (
-      oldAttrs: {
-        dontPatchShebangs = 1;
-      }
-    );
-
-    chronic      = chronic_0_9_1;
-    gpgme        = ruby_gpgme;
-    mime_types   = mime_types_1_25;
-    ncursesw_sup = ruby_ncursesw_sup;
-    rake         = rubyLibs.rake_10_1_0;
+  sup = callPackage ../applications/networking/mailreaders/sup {
+    ruby = ruby_1_9_3.override { cursesSupport = true; };
   };
 
-  synfigstudio = callPackage ../applications/graphics/synfigstudio { };
+  synfigstudio = callPackage ../applications/graphics/synfigstudio {
+    fontsConf = makeFontsConf { fontDirectories = [ freefont_ttf ]; };
+  };
+
+  sxhkd = callPackage ../applications/window-managers/sxhkd { };
 
   msmtp = callPackage ../applications/networking/msmtp { };
 
@@ -9224,6 +10733,8 @@ let
 
   nano = callPackage ../applications/editors/nano { };
 
+  nanoblogger = callPackage ../applications/misc/nanoblogger { };
+
   navipowm = callPackage ../applications/misc/navipowm { };
 
   navit = callPackage ../applications/misc/navit { };
@@ -9242,8 +10753,11 @@ let
   netsurf = recurseIntoAttrs (import ../applications/networking/browsers/netsurf { inherit pkgs; });
 
   notmuch = callPackage ../applications/networking/mailreaders/notmuch {
-    # use emacsPackages.notmuch if you want emacs support
+    # No need to build Emacs - notmuch.el works just fine without
+    # byte-compilation. Use emacs24Packages.notmuch if you want to
+    # byte-compiled files
     emacs = null;
+    sphinx = pythonPackages.sphinx;
   };
 
   nova = callPackage ../applications/virtualization/nova { };
@@ -9256,6 +10770,10 @@ let
 
   nvpy = callPackage ../applications/editors/nvpy { };
 
+  obconf = callPackage ../tools/X11/obconf {
+    inherit (gnome) libglade;
+  };
+
   ocrad = callPackage ../applications/graphics/ocrad { };
 
   offrss = callPackage ../applications/networking/offrss { };
@@ -9267,6 +10785,8 @@ let
   oneteam = callPackage ../applications/networking/instant-messengers/oneteam {};
 
   openbox = callPackage ../applications/window-managers/openbox { };
+
+  openbox-menu = callPackage ../applications/misc/openbox-menu { };
 
   openimageio = callPackage ../applications/graphics/openimageio { };
 
@@ -9290,6 +10810,10 @@ let
 
   panotools = callPackage ../applications/graphics/panotools { };
 
+  paprefs = callPackage ../applications/audio/paprefs {
+    inherit (gnome) libglademm gconfmm;
+  };
+
   pavucontrol = callPackage ../applications/audio/pavucontrol { };
 
   paraview = callPackage ../applications/graphics/paraview { };
@@ -9301,12 +10825,18 @@ let
   };
 
   pdftk = callPackage ../tools/typesetting/pdftk { };
+  pdfgrep  = callPackage ../tools/typesetting/pdfgrep { };
+
+  photoqt = callPackage ../applications/graphics/photoqt { };
 
   pianobar = callPackage ../applications/audio/pianobar { };
 
   pianobooster = callPackage ../applications/audio/pianobooster { };
 
-  picard = callPackage ../applications/audio/picard { };
+  picard = callPackage ../applications/audio/picard {
+    python-libdiscid = pythonPackages.discid;
+    mutagen = pythonPackages.mutagen;
+  };
 
   picocom = callPackage ../tools/misc/picocom { };
 
@@ -9315,17 +10845,16 @@ let
     gnutls = if config.pidgin.gnutls or false then gnutls else null;
     libgcrypt = if config.pidgin.gnutls or false then libgcrypt else null;
     startupnotification = libstartup_notification;
+    inherit (xlibs) libXext libICE libSM;
   };
 
-  pidginlatex = callPackage ../applications/networking/instant-messengers/pidgin-plugins/pidgin-latex {
-    imagemagick = imagemagickBig;
+  pidgin-with-plugins = callPackage ../applications/networking/instant-messengers/pidgin/wrapper.nix {
+    plugins = [];
   };
 
-  pidginlatexSF = builderDefsPackage
-    (import ../applications/networking/instant-messengers/pidgin-plugins/pidgin-latex/pidgin-latex-sf.nix)
-    {
-      inherit pkgconfig pidgin texLive imagemagick which glib gtk;
-    };
+  pidginlatex = callPackage ../applications/networking/instant-messengers/pidgin-plugins/pidgin-latex { };
+
+  pidginlatexSF = pidginlatex;
 
   pidginmsnpecan = callPackage ../applications/networking/instant-messengers/pidgin-plugins/msn-pecan { };
 
@@ -9333,17 +10862,23 @@ let
 
   pidginsipe = callPackage ../applications/networking/instant-messengers/pidgin-plugins/sipe { };
 
+  pidginwindowmerge = callPackage ../applications/networking/instant-messengers/pidgin-plugins/window-merge { };
+
   toxprpl = callPackage ../applications/networking/instant-messengers/pidgin-plugins/tox-prpl { };
 
   pinfo = callPackage ../applications/misc/pinfo { };
 
+  pinpoint = callPackage ../applications/office/pinpoint {};
+
   pinta = callPackage ../applications/graphics/pinta {
-    gtksharp = gtksharp2;
+    gtksharp = gtk-sharp;
   };
 
   pommed = callPackage ../os-specific/linux/pommed {
     inherit (xorg) libXpm;
   };
+
+  pond = callPackage ../applications/networking/pond { };
 
   potrace = callPackage ../applications/graphics/potrace {};
 
@@ -9353,9 +10888,16 @@ let
 
   qiv = callPackage ../applications/graphics/qiv { };
 
+  processing = callPackage ../applications/graphics/processing { inherit (xorg) libXxf86vm; };
+
   # perhaps there are better apps for this task? It's how I had configured my preivous system.
   # And I don't want to rewrite all rules
   procmail = callPackage ../applications/misc/procmail { };
+
+  profanity = callPackage ../applications/networking/instant-messengers/profanity {
+    notifySupport   = config.profanity.notifySupport   or true;
+    autoAwaySupport = config.profanity.autoAwaySupport or true;
+  };
 
   pstree = callPackage ../applications/misc/pstree { };
 
@@ -9365,19 +10907,41 @@ let
 
   pythonmagick = callPackage ../applications/graphics/PythonMagick { };
 
-  qbittorrent = callPackage ../applications/networking/p2p/qbittorrent { };
+  qbittorrent = callPackage ../applications/networking/p2p/qbittorrent {
+    boost = boost156;
+    libtorrentRasterbar = libtorrentRasterbar_0_16;
+  };
+
+  eiskaltdcpp = callPackage ../applications/networking/p2p/eiskaltdcpp { lua5 = lua5_1; };
 
   qemu = callPackage ../applications/virtualization/qemu { };
 
   qmmp = callPackage ../applications/audio/qmmp { };
 
+  qrcode = callPackage ../tools/graphics/qrcode {};
+
   qsampler = callPackage ../applications/audio/qsampler { };
 
   qsynth = callPackage ../applications/audio/qsynth { };
 
+  qtox = callPackage ../applications/networking/instant-messengers/qtox { };
+
   qtpfsgui = callPackage ../applications/graphics/qtpfsgui { };
 
   qtractor = callPackage ../applications/audio/qtractor { };
+
+  quassel_qt5 = callPackage ../applications/networking/irc/quassel {
+    monolithic = true;
+    daemon = false;
+    client = false;
+    withKDE = false;
+    useQt5 = true;
+    qt = qt5;
+    dconf = gnome3.dconf;
+    tag = "-qt5";
+  };
+
+  quirc = callPackage ../tools/graphics/quirc {};
 
   quodlibet = callPackage ../applications/audio/quodlibet {
     inherit (pythonPackages) mutagen;
@@ -9414,6 +10978,10 @@ let
     qt = qt4;
   };
 
+  retroshare06 = lowPrio (callPackage ../applications/networking/p2p/retroshare/0.6.nix {
+    qt = qt4;
+  });
+
   rsync = callPackage ../applications/networking/sync/rsync {
     enableACLs = !(stdenv.isDarwin || stdenv.isSunOS || stdenv.isFreeBSD);
     enableCopyDevicesPatch = (config.rsync.enableCopyDevicesPatch or false);
@@ -9432,11 +11000,23 @@ let
     unicode3Support = true;
   };
 
+  # urxvt plugins
+  urxvt_perls = callPackage ../applications/misc/rxvt_unicode-plugins/urxvt-perls { };
+  urxvt_tabbedex = callPackage ../applications/misc/rxvt_unicode-plugins/urxvt-tabbedex { };
+
+  rxvt_unicode_with-plugins = callPackage ../applications/misc/rxvt_unicode/wrapper.nix {
+    plugins = [ urxvt_perls urxvt_tabbedex ];
+  };
+
   sakura = callPackage ../applications/misc/sakura {
     inherit (gnome) vte;
   };
 
   sbagen = callPackage ../applications/misc/sbagen { };
+
+  scantailor = callPackage ../applications/graphics/scantailor {
+    boost = boost155;
+  };
 
   scite = callPackage ../applications/editors/scite { };
 
@@ -9446,9 +11026,7 @@ let
 
   seafile-client = callPackage ../applications/networking/seafile-client { };
 
-  seeks = callPackage ../tools/networking/p2p/seeks {
-    opencv = opencv_2_1;
-  };
+  seeks = callPackage ../tools/networking/p2p/seeks { };
 
   seg3d = callPackage ../applications/graphics/seg3d {
     wxGTK = wxGTK28.override { unicode = false; };
@@ -9470,13 +11048,27 @@ let
 
   skype_call_recorder = callPackage ../applications/networking/instant-messengers/skype-call-recorder { };
 
+  slmenu = callPackage ../applications/misc/slmenu {};
+
   slrn = callPackage ../applications/networking/newsreaders/slrn { };
+
+  sooperlooper = callPackage ../applications/audio/sooperlooper { };
+
+  spideroak = callPackage ../applications/networking/spideroak { };
 
   ssvnc = callPackage ../applications/networking/remote/ssvnc { };
 
   st = callPackage ../applications/misc/st {
     conf = config.st.conf or null;
   };
+
+  stag = callPackage ../applications/misc/stag {
+    curses = ncurses;
+  };
+
+  stella = callPackage ../misc/emulators/stella { };
+
+  linuxstopmotion = callPackage ../applications/video/linuxstopmotion { };
 
   sweethome3d = recurseIntoAttrs (  (callPackage ../applications/misc/sweethome3d { })
                                  // (callPackage ../applications/misc/sweethome3d/editors.nix {
@@ -9488,6 +11080,8 @@ let
 
   bittorrentSync = callPackage ../applications/networking/bittorrentsync { };
 
+  copy-com = callPackage ../applications/networking/copy-com { };
+
   dropbox = callPackage ../applications/networking/dropbox { };
 
   dropbox-cli = callPackage ../applications/networking/dropbox-cli { };
@@ -9496,13 +11090,7 @@ let
 
   lightdm_gtk_greeter = callPackage ../applications/display-managers/lightdm-gtk-greeter { };
 
-  # slic3r 0.9.10b says: "Running Slic3r under Perl >= 5.16 is not supported nor recommended"
-  slic3r = callPackage ../applications/misc/slic3r {
-    inherit (perl514Packages) EncodeLocale MathClipper ExtUtilsXSpp
-            BoostGeometryUtils MathConvexHullMonotoneChain MathGeometryVoronoi
-            MathPlanePath Moo IOStringy ClassXSAccessor Wx GrowlGNTP NetDBus;
-    perl = perl514;
-  };
+  slic3r = callPackage ../applications/misc/slic3r { };
 
   curaengine = callPackage ../applications/misc/curaengine { };
 
@@ -9514,13 +11102,22 @@ let
     libpng = libpng12;
   };
 
+
+  smartgithg = callPackage ../applications/version-management/smartgithg { };
+
+  slimThemes = recurseIntoAttrs (import ../applications/display-managers/slim/themes.nix {
+    inherit stdenv fetchurl slim;
+  });
+
   smartdeblur = callPackage ../applications/graphics/smartdeblur { };
+
+  snapper = callPackage ../tools/misc/snapper { };
 
   snd = callPackage ../applications/audio/snd { };
 
   shntool = callPackage ../applications/audio/shntool { };
 
-  sonic_visualiser = callPackage ../applications/audio/sonic-visualiser {
+  sonic-visualiser = callPackage ../applications/audio/sonic-visualiser {
     inherit (pkgs.vamp) vampSDK;
     inherit (pkgs.xlibs) libX11;
     fftw = pkgs.fftwSinglePrec;
@@ -9539,11 +11136,19 @@ let
     apiKey = config.libspotify.apiKey or null;
   };
 
+  src = callPackage ../applications/version-management/src/default.nix {
+    git = gitMinimal;
+  };
+
   stalonetray = callPackage ../applications/window-managers/stalonetray {};
 
   stp = callPackage ../applications/science/logic/stp {};
 
-  stumpwm = lispPackages.stumpwm;
+  stumpwmContrib = callPackage ../applications/window-managers/stumpwm/contrib.nix { };
+  stumpwm = callPackage ../applications/window-managers/stumpwm {
+    sbcl = sbcl_1_2_5;
+    lispPackages = lispPackagesFor (wrapLisp sbcl_1_2_5);
+  };
 
   sublime = callPackage ../applications/editors/sublime { };
 
@@ -9557,7 +11162,6 @@ let
     perlBindings = false;
     javahlBindings = false;
     saslSupport = false;
-    httpd = apacheHttpd;
     sasl = cyrus_sasl;
   };
 
@@ -9580,12 +11184,16 @@ let
     gpgSupport = true;
   };
 
+  symlinks = callPackage ../tools/system/symlinks { };
+
   syncthing = callPackage ../applications/networking/syncthing { };
 
   # linux only by now
   synergy = callPackage ../applications/misc/synergy { };
 
   tabbed = callPackage ../applications/window-managers/tabbed { };
+
+  tagainijisho = callPackage ../applications/office/tagainijisho {};
 
   tahoelafs = callPackage ../tools/networking/p2p/tahoe-lafs {
     inherit (pythonPackages) twisted foolscap simplejson nevow zfec
@@ -9608,11 +11216,11 @@ let
 
   taskwarrior = callPackage ../applications/misc/taskwarrior { };
 
+  taskserver = callPackage ../servers/misc/taskserver { };
+
   telegram-cli = callPackage ../applications/networking/instant-messengers/telegram-cli/default.nix { };
 
-  telepathy_gabble = callPackage ../applications/networking/instant-messengers/telepathy/gabble {
-    inherit (pkgs.gnome) libsoup;
-  };
+  telepathy_gabble = callPackage ../applications/networking/instant-messengers/telepathy/gabble { };
 
   telepathy_haze = callPackage ../applications/networking/instant-messengers/telepathy/haze {};
 
@@ -9624,10 +11232,19 @@ let
 
   telepathy_salut = callPackage ../applications/networking/instant-messengers/telepathy/salut {};
 
+  telepathy_idle = callPackage ../applications/networking/instant-messengers/telepathy/idle {};
+
+  terminal-notifier = callPackage ../applications/misc/terminal-notifier {};
+
   terminator = callPackage ../applications/misc/terminator {
     vte = gnome.vte.override { pythonSupport = true; };
     inherit (pythonPackages) notify;
   };
+
+  termite = callPackage ../applications/misc/termite {
+    gtk = gtk3;
+    vte = gnome3_12.vte-select-text;
+   };
 
   tesseract = callPackage ../applications/graphics/tesseract { };
 
@@ -9635,17 +11252,23 @@ let
 
   thunderbird = callPackage ../applications/networking/mailreaders/thunderbird {
     inherit (gnome) libIDL;
+    inherit (pythonPackages) pysqlite;
+    libpng = libpng_apng;
   };
 
   thunderbird-bin = callPackage ../applications/networking/mailreaders/thunderbird-bin {
     gconf = pkgs.gnome.GConf;
-    inherit (pkgs.gnome3) at_spi2_atk;
     inherit (pkgs.gnome) libgnome libgnomeui;
     inherit (pkgs.xlibs) libX11 libXScrnSaver libXext
       libXinerama libXrender libXt;
   };
 
   tig = gitAndTools.tig;
+
+  tilda = callPackage ../applications/misc/tilda {
+    vte = gnome3.vte;
+    gtk = gtk3;
+  };
 
   timidity = callPackage ../tools/misc/timidity { };
 
@@ -9655,7 +11278,18 @@ let
 
   tla = callPackage ../applications/version-management/arch { };
 
+  tlp = callPackage ../tools/misc/tlp {
+    enableRDW = config.networking.networkmanager.enable or false;
+  };
+
   todo-txt-cli = callPackage ../applications/office/todo.txt-cli { };
+
+  tomahawk = callPackage ../applications/audio/tomahawk {
+    inherit (pkgs.kde4) kdelibs;
+    enableXMPP      = config.tomahawk.enableXMPP      or true;
+    enableKDE       = config.tomahawk.enableKDE       or false;
+    enableTelepathy = config.tomahawk.enableTelepathy or false;
+  };
 
   torchat = callPackage ../applications/networking/instant-messengers/torchat {
     wrapPython = pythonPackages.wrapPython;
@@ -9672,22 +11306,17 @@ let
 
   trayer = callPackage ../applications/window-managers/trayer { };
 
-  tree = callPackage ../tools/system/tree {
-    # use gccApple to compile on darwin as the configure script adds a
-    # -no-cpp-precomp flag, which is not compatible with the default gcc
-    stdenv = if stdenv.isDarwin
-      then stdenvAdapters.overrideGCC stdenv gccApple
-      else stdenv;
-  };
+  tree = callPackage ../tools/system/tree {};
+
+  trezor-bridge = callPackage ../applications/networking/browsers/mozilla-plugins/trezor { };
 
   tribler = callPackage ../applications/networking/p2p/tribler { };
 
+  twister = callPackage ../applications/networking/p2p/twister { };
+
   twmn = callPackage ../applications/misc/twmn { };
 
-  twinkle = callPackage ../applications/networking/instant-messengers/twinkle {
-    ccrtp = ccrtp_1_8;
-    libzrtpcpp = libzrtpcpp_1_6;
-  };
+  twinkle = callPackage ../applications/networking/instant-messengers/twinkle { };
 
   umurmur = callPackage ../applications/networking/umurmur { };
 
@@ -9696,7 +11325,11 @@ let
     enableX11 = config.unison.enableX11 or true;
   };
 
+  unpaper = callPackage ../tools/graphics/unpaper { };
+
   uucp = callPackage ../tools/misc/uucp { };
+
+  uvccapture = callPackage ../applications/video/uvccapture { };
 
   uwimap = callPackage ../tools/networking/uwimap { };
 
@@ -9704,9 +11337,15 @@ let
     webkit = webkitgtk2;
   };
 
+  utox = callPackage ../applications/networking/instant-messengers/utox { };
+
   vanitygen = callPackage ../applications/misc/vanitygen { };
 
+  vanubi = callPackage ../applications/editors/vanubi { vala = vala_0_26; };
+
   vbindiff = callPackage ../applications/editors/vbindiff { };
+
+  vcprompt = callPackage ../applications/version-management/vcprompt { };
 
   vdpauinfo = callPackage ../tools/X11/vdpauinfo { };
 
@@ -9721,22 +11360,18 @@ let
 
   vim = callPackage ../applications/editors/vim { };
 
-  macvim = callPackage ../applications/editors/vim/macvim.nix { };
-
-  vimWrapper = wrapVim vim;
+  macvim = callPackage ../applications/editors/vim/macvim.nix { stdenv = clangStdenv; };
 
   vimHugeX = vim_configurable;
 
-  vimHugeXWrapper = wrapVim vimHugeX;
-
-  vim_configurable = callPackage ../applications/editors/vim/configurable.nix {
+  vim_configurable = vimUtils.makeCustomizable (callPackage ../applications/editors/vim/configurable.nix {
     inherit (pkgs) fetchurl fetchhg stdenv ncurses pkgconfig gettext
       composableDerivation lib config glib gtk python perl tcl ruby;
     inherit (pkgs.xlibs) libX11 libXext libSM libXpm libXt libXaw libXau libXmu
       libICE;
 
     features = "huge"; # one of  tiny, small, normal, big or huge
-    lua = pkgs.lua5;
+    lua = pkgs.lua5_1;
     gui = config.vim.gui or "auto";
 
     # optional features by flags
@@ -9744,9 +11379,11 @@ let
 
     # so that we can use gccApple if we're building on darwin
     inherit stdenvAdapters gccApple;
-  };
+  });
 
   vimNox = lowPrio (vim_configurable.override { source = "vim-nox"; });
+
+  qpdfview = callPackage ../applications/misc/qpdfview {};
 
   qvim = lowPrio (callPackage ../applications/editors/vim/qvim.nix {
     inherit (pkgs) fetchgit stdenv ncurses pkgconfig gettext
@@ -9761,9 +11398,10 @@ let
     flags = [ "python" "X11" ]; # only flag "X11" by now
   });
 
-  wrapVim = vim: import ../applications/editors/vim/wrapper.nix {
-    inherit stdenv makeWrapper writeText vim;
-    vimrc = config.vim.vimrc or "";
+  vimpc = callPackage ../applications/audio/vimpc { };
+
+  neovim = callPackage ../applications/editors/neovim {
+    inherit (lua52Packages) lpeg luaMessagePack luabitop;
   };
 
   virtviewer = callPackage ../applications/virtualization/virt-viewer {
@@ -9782,13 +11420,41 @@ let
 
   virtualgl = callPackage ../tools/X11/virtualgl { };
 
-  bumblebee = callPackage ../tools/X11/bumblebee { };
+  primus = callPackage ../tools/X11/primus {
+    primusLib = callPackage ../tools/X11/primus/lib.nix {
+      nvidia = linuxPackages.nvidia_x11;
+    };
+
+    primusLib_i686 = if system == "x86_64-linux"
+      then callPackage_i686 ../tools/X11/primus/lib.nix {
+             nvidia = pkgsi686Linux.linuxPackages.nvidia_x11.override { libsOnly = true; };
+           }
+      else null;
+  };
+
+  bumblebee = callPackage ../tools/X11/bumblebee {
+    nvidia_x11 = linuxPackages.nvidia_x11;
+    nvidia_x11_i686 = if system == "x86_64-linux"
+      then pkgsi686Linux.linuxPackages.nvidia_x11.override { libsOnly = true; }
+      else null;
+    virtualgl = virtualgl;
+    virtualgl_i686 = if system == "x86_64-linux"
+      then pkgsi686Linux.virtualgl
+      else null;
+  };
+
+  # use if you intend to connect the nvidia card to a monitor
+  bumblebee_display = bumblebee.override {
+    useDisplayDevice = true;
+  };
 
   vkeybd = callPackage ../applications/audio/vkeybd {
     inherit (xlibs) libX11;
   };
 
-  vlc = callPackage ../applications/video/vlc { };
+  vlc = callPackage ../applications/video/vlc {
+    ffmpeg = ffmpeg_2_2;
+  };
 
   vmpk = callPackage ../applications/audio/vmpk { };
 
@@ -9796,11 +11462,11 @@ let
 
   vorbisTools = callPackage ../applications/audio/vorbis-tools { };
 
-  vue = callPackage ../applications/misc/vue {
-    jre = icedtea7_jre;
-  };
+  vue = callPackage ../applications/misc/vue { };
 
   vwm = callPackage ../applications/window-managers/vwm { };
+
+  vym = callPackage ../applications/misc/vym { };
 
   w3m = callPackage ../applications/networking/browsers/w3m {
     graphicsSupport = false;
@@ -9808,9 +11474,19 @@ let
 
   weechat = callPackage ../applications/networking/irc/weechat { };
 
-  weechatDevel = lowPrio (callPackage ../applications/networking/irc/weechat/devel.nix { });
+  westonLite = callPackage ../applications/window-managers/weston {
+    pango = null;
+    freerdp = null;
+    libunwind = null;
+    vaapi = null;
+    libva = null;
+    libwebp = null;
+    xwayland = null;
+  };
 
-  weston = callPackage ../applications/window-managers/weston { };
+  weston = callPackage ../applications/window-managers/weston {
+    freerdp = freerdpUnstable;
+  };
 
   windowmaker = callPackage ../applications/window-managers/windowmaker { };
 
@@ -9841,39 +11517,107 @@ let
 
   wordnet = callPackage ../applications/misc/wordnet { };
 
-  wrapChromium = browser: wrapFirefox {
-    inherit browser;
-    browserName = browser.packageName;
-    desktopName = "Chromium";
-    icon = "${browser}/share/icons/hicolor/48x48/apps/${browser.packageName}.png";
+  workrave = callPackage ../applications/misc/workrave {
+    inherit (gnome) GConf gconfmm;
+    inherit (python27Packages) cheetah;
   };
 
   wrapFirefox =
     { browser, browserName ? "firefox", desktopName ? "Firefox", nameSuffix ? ""
-    , icon ? "${browser}/lib/${browser.name}/icons/mozicon128.png" }:
+    , icon ? "${browser}/lib/${browser.name}/browser/icons/mozicon128.png" }:
     let
       cfg = stdenv.lib.attrByPath [ browserName ] {} config;
       enableAdobeFlash = cfg.enableAdobeFlash or false;
       enableGnash = cfg.enableGnash or false;
+      jre = cfg.jre or false;
+      icedtea = cfg.icedtea or false;
     in
     import ../applications/networking/browsers/firefox/wrapper.nix {
       inherit stdenv lib makeWrapper makeDesktopItem browser browserName desktopName nameSuffix icon;
+      libtrick = true;
       plugins =
          assert !(enableGnash && enableAdobeFlash);
+         assert !(jre && icedtea);
          ([ ]
           ++ lib.optional enableGnash gnash
           ++ lib.optional enableAdobeFlash flashplayer
           ++ lib.optional (cfg.enableDjvu or false) (djview4)
           ++ lib.optional (cfg.enableMPlayer or false) (MPlayerPlugin browser)
           ++ lib.optional (cfg.enableGeckoMediaPlayer or false) gecko_mediaplayer
-          ++ lib.optional (supportsJDK && cfg.jre or false && jrePlugin ? mozillaPlugin) jrePlugin
+          ++ lib.optional (supportsJDK && jre && jrePlugin ? mozillaPlugin) jrePlugin
+          ++ lib.optional icedtea icedtea_web
           ++ lib.optional (cfg.enableGoogleTalkPlugin or false) google_talk_plugin
           ++ lib.optional (cfg.enableFriBIDPlugin or false) fribid
+          ++ lib.optional (cfg.enableGnomeExtensions or false) gnome3.gnome_shell
+          ++ lib.optional (cfg.enableTrezor or false) trezor-bridge
          );
       libs = [ gstreamer gst_plugins_base ] ++ lib.optionals (cfg.enableQuakeLive or false)
-             (with xlibs; [ stdenv.gcc libX11 libXxf86dga libXxf86vm libXext libXt alsaLib zlib ]);
+             (with xlibs; [ stdenv.cc libX11 libXxf86dga libXxf86vm libXext libXt alsaLib zlib ]);
+      gst_plugins = [ gst_plugins_base gst_plugins_good gst_plugins_bad gst_plugins_ugly gst_ffmpeg ];
       gtk_modules = [ libcanberra ];
     };
+
+  retroArchCores =
+    let
+      cfg = config.retroarch or {};
+      inherit (lib) optional;
+    in with libretro;
+      ([ ]
+      ++ optional (cfg.enable4do or false) _4do
+      ++ optional (cfg.enableBsnesMercury or false) bsnes-mercury
+      ++ optional (cfg.enableDesmume or false) desmume
+      ++ optional (cfg.enableFBA or false) fba
+      ++ optional (cfg.enableFceumm or false) fceumm
+      ++ optional (cfg.enableGambatte or false) gambatte
+      ++ optional (cfg.enableGenesisPlusGX or false) genesis-plus-gx
+      ++ optional (cfg.enableMednafenPCEFast or false) mednafen-pce-fast
+      ++ optional (cfg.enableMupen64Plus or false) mupen64plus
+      ++ optional (cfg.enableNestopia or false) nestopia
+      ++ optional (cfg.enablePicodrive or false) picodrive
+      ++ optional (cfg.enablePrboom or false) prboom
+      ++ optional (cfg.enablePPSSPP or false) ppsspp
+      ++ optional (cfg.enableQuickNES or false) quicknes
+      ++ optional (cfg.enableScummVM or false) scummvm
+      ++ optional (cfg.enableSnes9x or false) snes9x
+      ++ optional (cfg.enableSnes9xNext or false) snes9x-next
+      ++ optional (cfg.enableStella or false) stella
+      ++ optional (cfg.enableVbaNext or false) vba-next
+      ++ optional (cfg.enableVbaM or false) vba-m
+      );
+
+  wrapRetroArch = { retroarch }: import ../misc/emulators/retroarch/wrapper.nix {
+    inherit stdenv lib makeWrapper retroarch;
+    cores = retroArchCores;
+  };
+
+  wrapXBMC = { xbmc }: import ../applications/video/xbmc/wrapper.nix {
+    inherit stdenv lib makeWrapper xbmc;
+    plugins = let inherit (lib) optional; in with xbmcPlugins;
+      ([]
+      ++ optional (config.xbmc.enableAdvancedLauncher or false) advanced-launcher
+      ++ optional (config.xbmc.enableGenesis or false) genesis
+      ++ optional (config.xbmc.enableSVTPlay or false) svtplay
+      );
+  };
+
+  wrapKodi = { kodi }: import ../applications/video/kodi/wrapper.nix {
+    inherit stdenv lib makeWrapper kodi;
+    plugins = let inherit (lib) optional; in with kodiPlugins;
+      ([]
+      ++ optional (config.kodi.enableAdvancedLauncher or false) advanced-launcher
+      ++ optional (config.kodi.enableGenesis or false) genesis
+      ++ optional (config.kodi.enableSVTPlay or false) svtplay
+      );
+  };
+
+  wxhexeditor = callPackage ../applications/editors/wxhexeditor { };
+
+  wxcam = callPackage ../applications/video/wxcam {
+    inherit (gnome) libglade;
+    inherit intltool;
+    wxGTK = wxGTK28;
+    gtk = gtk2;
+  };
 
   x11vnc = callPackage ../tools/X11/x11vnc { };
 
@@ -9891,8 +11635,36 @@ let
 
   xbindkeys = callPackage ../tools/X11/xbindkeys { };
 
-  xbmc = callPackage ../applications/video/xbmc {
+  xbmcPlain = callPackage ../applications/video/xbmc {
     ffmpeg = ffmpeg_1;
+  };
+
+  xbmcPlugins = recurseIntoAttrs (callPackage ../applications/video/xbmc/plugins.nix {
+    xbmc = xbmcPlain;
+  });
+
+  xbmc = wrapXBMC {
+    xbmc = xbmcPlain;
+  };
+
+  kodiPlain = callPackage ../applications/video/kodi { };
+
+  kodiPlugins = recurseIntoAttrs (callPackage ../applications/video/kodi/plugins.nix {
+    kodi = kodiPlain;
+  });
+
+  kodi = wrapKodi {
+    kodi = kodiPlain;
+  };
+
+  xbmc-retroarch-advanced-launchers =
+    callPackage ../misc/emulators/retroarch/xbmc-advanced-launchers.nix {
+      cores = retroArchCores;
+  };
+
+  kodi-retroarch-advanced-launchers =
+    callPackage ../misc/emulators/retroarch/kodi-advanced-launchers.nix {
+      cores = retroArchCores;
   };
 
   xca = callPackage ../applications/misc/xca { };
@@ -9919,7 +11691,9 @@ let
 
   xdotool = callPackage ../tools/X11/xdotool { };
 
-  xen = callPackage ../applications/virtualization/xen { };
+  xen = callPackage ../applications/virtualization/xen {
+    stdenv = overrideGCC stdenv gcc45;
+  };
 
   xfe = callPackage ../applications/misc/xfe {
     fox = fox_1_6;
@@ -9939,6 +11713,13 @@ let
     inherit (gnome) libglade GConf;
   };
 
+  xiphos = callPackage ../applications/misc/xiphos {
+    gconf = gnome2.GConf;
+    inherit (gnome2) gtkhtml libgtkhtml libglade scrollkeeper;
+    python = python27;
+    webkitgtk = webkitgtk2;
+  };
+
   xournal = callPackage ../applications/graphics/xournal {
     inherit (gnome) libgnomeprint libgnomeprintui libgnomecanvas;
   };
@@ -9949,6 +11730,27 @@ let
   };
 
   xkb_switch = callPackage ../tools/X11/xkb-switch { };
+
+  xmonad_log_applet_gnome2 = callPackage ../applications/window-managers/xmonad-log-applet {
+    desktopSupport = "gnome2";
+    inherit (xfce) libxfce4util xfce4panel;
+    gnome2_panel = gnome2.gnome_panel;
+    GConf2 = gnome2.GConf;
+  };
+
+  xmonad_log_applet_gnome3 = callPackage ../applications/window-managers/xmonad-log-applet {
+    desktopSupport = "gnome3";
+    inherit (xfce) libxfce4util xfce4panel;
+    gnome2_panel = gnome2.gnome_panel;
+    GConf2 = gnome2.GConf;
+  };
+
+  xmonad_log_applet_xfce = callPackage ../applications/window-managers/xmonad-log-applet {
+    desktopSupport = "xfce4";
+    inherit (xfce) libxfce4util xfce4panel;
+    gnome2_panel = gnome2.gnome_panel;
+    GConf2 = gnome2.GConf;
+  };
 
   libxpdf = callPackage ../applications/misc/xpdf/libxpdf.nix { };
 
@@ -9964,6 +11766,13 @@ let
 
   xterm = callPackage ../applications/misc/xterm { };
 
+  finalterm = callPackage ../applications/misc/finalterm { };
+
+  roxterm = callPackage ../applications/misc/roxterm {
+    inherit (pythonPackages) lockfile;
+    inherit (gnome3) vte gsettings_desktop_schemas;
+  };
+
   xtrace = callPackage ../tools/X11/xtrace { };
 
   xlaunch = callPackage ../tools/X11/xlaunch { };
@@ -9974,10 +11783,7 @@ let
 
   xmp = callPackage ../applications/audio/xmp { };
 
-  xnee = callPackage ../tools/X11/xnee {
-    # Work around "missing separator" error.
-    stdenv = overrideInStdenv stdenv [ gnumake381 ];
-  };
+  xnee = callPackage ../tools/X11/xnee { };
 
   xvidcap = callPackage ../applications/video/xvidcap {
     inherit (gnome) scrollkeeper libglade;
@@ -9987,9 +11793,13 @@ let
 
   inherit (gnome3) yelp;
 
-  qgis = callPackage ../applications/misc/qgis {};
+  qgis = callPackage ../applications/gis/qgis {};
 
-  qtbitcointrader = callPackage ../applications/misc/qtbitcointrader { };
+  qtbitcointrader = callPackage ../applications/misc/qtbitcointrader {
+    qt = qt4;
+  };
+
+  yed = callPackage ../applications/graphics/yed {};
 
   ykpers = callPackage ../applications/misc/ykpers {};
 
@@ -10001,23 +11811,36 @@ let
     (let callPackage = newScope pkgs.zathuraCollection; in
       import ../applications/misc/zathura {
         inherit callPackage pkgs fetchurl;
+        stdenv = overrideGCC stdenv gcc49;
         useMupdf = config.zathura.useMupdf or false;
       });
 
   zathura = zathuraCollection.zathuraWrapper;
 
+  zed = callPackage ../applications/editors/zed { };
+
   zeroc_ice = callPackage ../development/libraries/zeroc-ice { };
 
   girara = callPackage ../applications/misc/girara {
     gtk = gtk3;
+    stdenv = overrideGCC stdenv gcc49;
+  };
+
+  girara-light = callPackage ../applications/misc/girara {
+    gtk = gtk3;
+    withBuildColors = false;
+    ncurses = null;
   };
 
   zgrviewer = callPackage ../applications/graphics/zgrviewer {};
 
-  zotero = callPackage ../applications/office/zotero { };
+  zim = callPackage ../applications/office/zim {
+    pygtk = pyGtkGlade;
+  };
+
+  zotero = callPackage ../applications/office/zotero {};
 
   zynaddsubfx = callPackage ../applications/audio/zynaddsubfx { };
-
 
   ### GAMES
 
@@ -10028,9 +11851,11 @@ let
   anki = callPackage ../games/anki { };
 
   asc = callPackage ../games/asc {
-    lua = lua5;
+    lua = lua5_1;
     libsigcxx = libsigcxx12;
   };
+
+  astromenace = callPackage ../games/astromenace { };
 
   atanks = callPackage ../games/atanks {};
 
@@ -10046,9 +11871,7 @@ let
 
   blackshadeselite = callPackage ../games/blackshadeselite { };
 
-  blobby = callPackage ../games/blobby {
-    boost = boost149;
-  };
+  blobby = callPackage ../games/blobby { };
 
   bsdgames = callPackage ../games/bsdgames { };
 
@@ -10086,10 +11909,6 @@ let
     };
   };
 
-  dwarf_fortress_modable = appendToName "moddable" (dwarf_fortress.override {
-    copyDataDirectory = true;
-  });
-
   dwarf-therapist = callPackage ../games/dwarf-therapist { };
 
   d1x_rebirth = callPackage ../games/d1x-rebirth { };
@@ -10102,10 +11921,9 @@ let
 
   egoboo = callPackage ../games/egoboo { };
 
-  exult = callPackage ../games/exult {
-    stdenv = overrideGCC stdenv gcc42;
-    libpng = libpng12;
-  };
+  exult = callPackage ../games/exult { };
+
+  fairymax = callPackage ../games/fairymax {};
 
   flightgear = callPackage ../games/flightgear { };
 
@@ -10128,27 +11946,32 @@ let
 
   glestae = callPackage ../games/glestae {};
 
-  globulation2 = callPackage ../games/globulation {};
+  globulation2 = callPackage ../games/globulation {
+    boost = boost155;
+  };
 
   gltron = callPackage ../games/gltron { };
+
+  gnubg = callPackage ../games/gnubg { };
 
   gnuchess = callPackage ../games/gnuchess { };
 
   gnugo = callPackage ../games/gnugo { };
 
-  gparted = callPackage ../tools/misc/gparted { };
-
-  gsmartcontrol = callPackage ../tools/misc/gsmartcontrol {
-    inherit (gnome) libglademm;
-  };
-
   gtypist = callPackage ../games/gtypist { };
+
+  hedgewars = callPackage ../games/hedgewars {
+    inherit (haskellPackages) ghc network vector utf8String bytestringShow
+      random hslogger dataenc;
+  };
 
   hexen = callPackage ../games/hexen { };
 
   icbm3d = callPackage ../games/icbm3d { };
 
-  ingen = callPackage ../applications/audio/ingen { };
+  ingen = callPackage ../applications/audio/ingen {
+    inherit (pythonPackages) rdflib;
+  };
 
   instead = callPackage ../games/instead {
     lua = lua5;
@@ -10166,11 +11989,15 @@ let
 
   mars = callPackage ../games/mars { };
 
+  megaglest = callPackage ../games/megaglest {};
+
   micropolis = callPackage ../games/micropolis { };
 
   mnemosyne = callPackage ../games/mnemosyne {
     inherit (pythonPackages) matplotlib cherrypy sqlite3;
   };
+
+  n2048 = callPackage ../games/n2048 {};
 
   naev = callPackage ../games/naev { };
 
@@ -10180,7 +12007,7 @@ let
 
   oilrush = callPackage ../games/oilrush { };
 
-  openra = callPackage ../games/openra { };
+  openra = callPackage ../games/openra { lua = lua5_1; };
 
   openttd = callPackage ../games/openttd {
     zlib = zlibStatic;
@@ -10189,6 +12016,8 @@ let
   opentyrian = callPackage ../games/opentyrian { };
 
   openxcom = callPackage ../games/openxcom { };
+
+  performous = callPackage ../games/performous { };
 
   pingus = callPackage ../games/pingus {};
 
@@ -10225,6 +12054,8 @@ let
 
   rogue = callPackage ../games/rogue { };
 
+  saga = callPackage ../applications/gis/saga { };
+
   samplv1 = callPackage ../applications/audio/samplv1 { };
 
   sauerbraten = callPackage ../games/sauerbraten {};
@@ -10249,17 +12080,17 @@ let
   # You still can override by passing more arguments.
   spaceOrbit = callPackage ../games/orbit { };
 
-  spring = callPackage ../games/spring { };
+  spring = callPackage ../games/spring {
+    boost = boost155;
+  };
 
   springLobby = callPackage ../games/spring/springlobby.nix { };
 
   stardust = callPackage ../games/stardust {};
 
-  steam = callPackage_i686 ../games/steam {};
+  steam = callPackage ../games/steam {};
 
-  steamChrootEnv = callPackage_i686 ../games/steam/chrootenv.nix {
-    zenity = gnome2.zenity;
-  };
+  steamChrootEnv = callPackage ../games/steam/chrootenv.nix { };
 
   stuntrally = callPackage ../games/stuntrally { };
 
@@ -10277,7 +12108,7 @@ let
 
   tennix = callPackage ../games/tennix { };
 
-  tibia = callPackage ../games/tibia { };
+  tibia = callPackage_i686 ../games/tibia { };
 
   tintin = callPackage ../games/tintin { };
 
@@ -10317,6 +12148,8 @@ let
 
   urbanterror = callPackage ../games/urbanterror { };
 
+  ue4demos = recurseIntoAttrs (callPackage ../games/ue4demos { });
+
   ut2004demo = callPackage ../games/ut2004demo { };
 
   vdrift = callPackage ../games/vdrift { };
@@ -10352,6 +12185,10 @@ let
 
   xonotic = callPackage ../games/xonotic { };
 
+  xskat = callPackage ../games/xskat { };
+
+  xsnow = callPackage ../games/xsnow { };
+
   xsokoban = builderDefsPackage (import ../games/xsokoban) {
     inherit (xlibs) libX11 xproto libXpm libXt;
   };
@@ -10364,6 +12201,7 @@ let
 
   keen4 = callPackage ../games/keen4 { };
 
+  zeroad = callPackage ../games/0ad { };
 
   ### DESKTOP ENVIRONMENTS
 
@@ -10386,11 +12224,13 @@ let
     cjs = callPackage ../desktops/cinnamon/cjs.nix { };
   };
 
+  clearlooks-phenix = callPackage ../misc/themes/gtk3/clearlooks-phenix { };
+
   enlightenment = callPackage ../desktops/enlightenment { };
 
-  e17 = recurseIntoAttrs (
-    let callPackage = newScope pkgs.e17; in
-    import ../desktops/e17 { inherit callPackage pkgs; }
+  e19 = recurseIntoAttrs (
+    let callPackage = newScope pkgs.e19; in
+    import ../desktops/e19 { inherit callPackage pkgs; }
   );
 
   gnome2 = callPackage ../desktops/gnome-2 {
@@ -10401,14 +12241,11 @@ let
     inherit (pkgs) libsoup libwnck gtk_doc gnome_doc_utils;
   };
 
-  gnome3 = recurseIntoAttrs (callPackage ../desktops/gnome-3/3.10 {
-    callPackage = pkgs.newScope pkgs.gnome3;
-    self = pkgs.gnome3;
-  });
-
   gnome3_12 = recurseIntoAttrs (callPackage ../desktops/gnome-3/3.12 {
     callPackage = pkgs.newScope pkgs.gnome3_12;
   });
+
+  gnome3 = gnome3_12;
 
   gnome = recurseIntoAttrs gnome2;
 
@@ -10416,15 +12253,13 @@ let
 
   kakasi = callPackage ../tools/text/kakasi { };
 
-  kde4 = recurseIntoAttrs pkgs.kde412;
+  kde4 = recurseIntoAttrs pkgs.kde414;
 
-  kde4_next = recurseIntoAttrs( lib.lowPrioSet pkgs.kde412 );
-
-  kde412 = kdePackagesFor (pkgs.kde412 // {
-      eigen = eigen2;
+  kde414 = kdePackagesFor (pkgs.kde414 // {
       libusb = libusb1;
       libcanberra = libcanberra_kde;
-    }) ../desktops/kde-4.12;
+      boost = boost156;
+    }) ../desktops/kde-4.14;
 
   kdePackagesFor = self: dir:
     let callPackageOrig = callPackage; in
@@ -10440,8 +12275,6 @@ let
 
       recurseForRelease = true;
 
-      akunambol = callPackage ../applications/networking/sync/akunambol { };
-
       amarok = callPackage ../applications/audio/amarok { };
 
       bangarang = callPackage ../applications/video/bangarang { };
@@ -10450,7 +12283,9 @@ let
 
       bluedevil = callPackage ../tools/bluetooth/bluedevil { };
 
-      calligra = callPackage ../applications/office/calligra { };
+      calligra = callPackage ../applications/office/calligra { eigen = eigen2; };
+
+      colord-kde = callPackage ../tools/misc/colord-kde { };
 
       digikam = if builtins.compareVersions "4.9" kde4.release == 1 then
           callPackage ../applications/graphics/digikam/2.nix { }
@@ -10471,15 +12306,19 @@ let
 
       kdeconnect = callPackage ../applications/misc/kdeconnect { };
 
-      kdenlive = callPackage ../applications/video/kdenlive { };
+      kdenlive = callPackage ../applications/video/kdenlive { mlt = mlt-qt4; };
 
       kdesvn = callPackage ../applications/version-management/kdesvn { };
 
       kdevelop = callPackage ../applications/editors/kdevelop { };
 
-      kdevplatform = callPackage ../development/libraries/kdevplatform { };
+      kdevplatform = callPackage ../development/libraries/kdevplatform {
+        boost = boost156;
+      };
 
       kdiff3 = callPackage ../tools/text/kdiff3 { };
+
+      kgraphviewer = callPackage ../applications/graphics/kgraphviewer { };
 
       kile = callPackage ../applications/editors/kile { };
 
@@ -10505,15 +12344,25 @@ let
 
       libalkimia = callPackage ../development/libraries/libalkimia { };
 
-      libktorrent = callPackage ../development/libraries/libktorrent { };
+      libktorrent = callPackage ../development/libraries/libktorrent {
+        boost = boost156;
+      };
 
       libkvkontakte = callPackage ../development/libraries/libkvkontakte { };
 
       liblikeback = callPackage ../development/libraries/liblikeback { };
 
+      libmm-qt = callPackage ../development/libraries/libmm-qt { };
+
+      libnm-qt = callPackage ../development/libraries/libnm-qt { };
+
+      massif-visualizer = callPackage ../development/tools/analysis/massif-visualizer { };
+
       networkmanagement = callPackage ../tools/networking/networkmanagement { };
 
       partitionManager = callPackage ../tools/misc/partition-manager { };
+
+      plasma-nm = callPackage ../tools/networking/plasma-nm { };
 
       polkit_kde_agent = callPackage ../tools/security/polkit-kde-agent { };
 
@@ -10521,18 +12370,47 @@ let
 
       qtcurve = callPackage ../misc/themes/qtcurve { };
 
-      quassel = callPackage ../applications/networking/irc/quassel { };
+      quassel = callPackage ../applications/networking/irc/quassel rec {
+        monolithic = true;
+        daemon = false;
+        client = false;
+        withKDE = stdenv.isLinux;
+        qt = if withKDE then qt4 else qt5; # KDE supported quassel cannot build with qt5 yet (maybe in 0.12.0)
+        dconf = gnome3.dconf;
+      };
+
+      quasselWithoutKDE = (self.quassel.override {
+        monolithic = true;
+        daemon = false;
+        client = false;
+        withKDE = false;
+        #qt = qt5;
+        tag = "-without-kde";
+      });
 
       quasselDaemon = (self.quassel.override {
         monolithic = false;
         daemon = true;
+        client = false;
+        withKDE = false;
+        #qt = qt5;
         tag = "-daemon";
       });
 
       quasselClient = (self.quassel.override {
         monolithic = false;
+        daemon = false;
         client = true;
         tag = "-client";
+      });
+
+      quasselClientWithoutKDE = (self.quasselClient.override {
+        monolithic = false;
+        daemon = false;
+        client = true;
+        withKDE = false;
+        #qt = qt5;
+        tag = "-client-without-kde";
       });
 
       rekonq = callPackage ../applications/networking/browsers/rekonq { };
@@ -10554,6 +12432,11 @@ let
       kwooty = callPackage ../applications/networking/newsreaders/kwooty { };
     };
 
+  pantheon = recurseIntoAttrs rec {
+    callPackage = newScope pkgs.pantheon;
+    pantheon-terminal = callPackage ../desktops/pantheon/apps/pantheon-terminal { };
+  };
+
   redshift = callPackage ../applications/misc/redshift {
     inherit (xorg) libX11 libXrandr libxcb randrproto libXxf86vm
       xf86vidmodeproto;
@@ -10562,7 +12445,13 @@ let
     geoclue = geoclue2;
   };
 
-  oxygen_gtk = callPackage ../misc/themes/gtk2/oxygen-gtk { };
+  orion = callPackage ../misc/themes/orion {};
+
+  oxygen-gtk2 = callPackage ../misc/themes/gtk2/oxygen-gtk { };
+
+  oxygen-gtk3 = callPackage ../misc/themes/gtk3/oxygen-gtk3 { };
+
+  oxygen_gtk = oxygen-gtk2; # backwards compatibility
 
   gtk_engines = callPackage ../misc/themes/gtk2/gtk-engines { };
 
@@ -10574,9 +12463,18 @@ let
 
   mate-themes = callPackage ../misc/themes/mate-themes { };
 
-  xfce = xfce4_10;
-  xfce4_10 = recurseIntoAttrs (import ../desktops/xfce { inherit pkgs newScope; });
+  plasma51 = recurseIntoAttrs (callPackage ../desktops/plasma-5.1 {
+    stdenv = overrideGCC stdenv gccStdInc;
+  });
+  plasma5_latest = plasma51;
+  plasma5_stable = plasma51;
 
+  kde5 = kf55 // plasma51 // kdeApps_14_12;
+
+  xfce = xfce4_10;
+  xfce4_10 = recurseIntoAttrs (import ../desktops/xfce { inherit config pkgs newScope; });
+
+  xrandr-invert-colors = callPackage ../applications/misc/xrandr-invert-colors { };
 
   ### SCIENCE
 
@@ -10599,12 +12497,9 @@ let
 
   arb = callPackage ../applications/science/biology/arb {
     lesstif = lesstif93;
-    stdenv = overrideGCC stdenv gcc42;
   };
 
   archimedes = callPackage ../applications/science/electronics/archimedes { };
-
-  biolib = callPackage ../development/libraries/science/biology/biolib { };
 
   emboss = callPackage ../applications/science/biology/emboss { };
 
@@ -10635,7 +12530,11 @@ let
     # great feature, but it's of limited use with pre-built binaries
     # coming from a central build farm.
     tolerateCpuTimingInaccuracy = true;
+    liblapack = liblapack_3_5_0;
+    withLapack = false;
   };
+
+  atlasWithLapack = atlas.override { withLapack = true; };
 
   blas = callPackage ../development/libraries/science/math/blas { };
 
@@ -10648,14 +12547,30 @@ let
   jags = callPackage ../applications/science/math/jags { };
 
   liblapack = callPackage ../development/libraries/science/math/liblapack { };
+  liblapack_3_5_0 = callPackage ../development/libraries/science/math/liblapack/3.5.0.nix { };
 
   liblbfgs = callPackage ../development/libraries/science/math/liblbfgs { };
 
-  openblas = callPackage ../development/libraries/science/math/openblas { };
+  # julia is pinned to specific versions of openblas, so keep old versions
+  # until they aren't needed. The un-versioned attribute may continue to track
+  # upstream development.
+  openblas = callPackage ../development/libraries/science/math/openblas {
+    liblapack = liblapack_3_5_0;
+  };
+  openblas_0_2_10 = callPackage ../development/libraries/science/math/openblas/0.2.10.nix {
+    liblapack = liblapack_3_5_0;
+  };
+  openblas_0_2_2 = callPackage ../development/libraries/science/math/openblas/0.2.2.nix { };
 
   mathematica = callPackage ../applications/science/math/mathematica { };
+  mathematica9 = callPackage ../applications/science/math/mathematica/9.nix { };
 
   sage = callPackage ../applications/science/math/sage { };
+
+  suitesparse_4_2 = callPackage ../development/libraries/science/math/suitesparse/4.2.nix { };
+  suitesparse_4_4_1 = callPackage ../development/libraries/science/math/suitesparse {};
+
+  ipopt = callPackage ../development/libraries/science/math/ipopt { };
 
   ### SCIENCE/MOLECULAR-DYNAMICS
 
@@ -10679,16 +12594,65 @@ let
   alt-ergo = callPackage ../applications/science/logic/alt-ergo {};
 
   coq = callPackage ../applications/science/logic/coq {
+    inherit (ocamlPackages_4_01_0) ocaml findlib lablgtk;
+    camlp5 = ocamlPackages_4_01_0.camlp5_transitional;
+  };
+
+  coq_HEAD = callPackage ../applications/science/logic/coq/HEAD.nix {
     inherit (ocamlPackages) findlib lablgtk;
     camlp5 = ocamlPackages.camlp5_transitional;
   };
 
   coq_8_3 = callPackage ../applications/science/logic/coq/8.3.nix {
-    inherit (ocamlPackages) findlib lablgtk;
-    camlp5 = ocamlPackages.camlp5_transitional;
+    inherit (ocamlPackages_3_12_1) ocaml findlib;
+    camlp5 = ocamlPackages_3_12_1.camlp5_transitional;
+    lablgtk = ocamlPackages_3_12_1.lablgtk_2_14;
   };
 
+  mkCoqPackages_8_4 = self: let callPackage = newScope self; in {
+
+    bedrock = callPackage ../development/coq-modules/bedrock {};
+
+    contribs =
+      let contribs =
+        import ../development/coq-modules/contribs
+        contribs
+        callPackage { };
+      in
+        recurseIntoAttrs contribs;
+
+    coqExtLib = callPackage ../development/coq-modules/coq-ext-lib {};
+
+    coqeal = callPackage ../development/coq-modules/coqeal {};
+
+    domains = callPackage ../development/coq-modules/domains {};
+
+    fiat = callPackage ../development/coq-modules/fiat {};
+
+    flocq = callPackage ../development/coq-modules/flocq {};
+
+    heq = callPackage ../development/coq-modules/heq {};
+
+    interval = callPackage ../development/coq-modules/interval {};
+
+    mathcomp = callPackage ../development/coq-modules/mathcomp {};
+
+    paco = callPackage ../development/coq-modules/paco {};
+
+    ssreflect = callPackage ../development/coq-modules/ssreflect {};
+
+    tlc = callPackage ../development/coq-modules/tlc {};
+
+    unimath = callPackage ../development/coq-modules/unimath {};
+
+    ynot = callPackage ../development/coq-modules/ynot {};
+
+  };
+
+  coqPackages = recurseIntoAttrs (mkCoqPackages_8_4 coqPackages);
+
   cvc3 = callPackage ../applications/science/logic/cvc3 {};
+  cvc4 = callPackage ../applications/science/logic/cvc4 {};
 
   ekrhyper = callPackage ../applications/science/logic/ekrhyper {};
 
@@ -10712,6 +12676,7 @@ let
   isabelle = import ../applications/science/logic/isabelle {
     inherit (pkgs) stdenv fetchurl nettools perl polyml;
     inherit (pkgs.emacs24Packages) proofgeneral;
+    java = if stdenv.isLinux then jre else jdk;
   };
 
   iprover = callPackage ../applications/science/logic/iprover {};
@@ -10726,7 +12691,7 @@ let
     ocaml = ocaml_3_11_2;
     inherit (ocamlPackages_3_11_2) findlib lablgtk ocaml_expat gmetadom ocaml_http
             lablgtkmathview ocaml_mysql ocaml_sqlite3 ocamlnet camlzip ocaml_pcre;
-    ulex08 = ocamlPackages_3_11_2.ulex08.override { camlp5 = ocamlPackages_3_11_2.camlp5_5_transitional; };
+    ulex08 = ocamlPackages_3_11_2.ulex08.override { camlp5 = ocamlPackages_3_11_2.camlp5_old_transitional; };
   };
 
   matita_130312 = lowPrio (callPackage ../applications/science/logic/matita/130312.nix {
@@ -10738,13 +12703,17 @@ let
 
   opensmt = callPackage ../applications/science/logic/opensmt { };
 
+  ott = callPackage ../applications/science/logic/ott {
+    camlp5 = ocamlPackages.camlp5_transitional;
+  };
+
   otter = callPackage ../applications/science/logic/otter {};
 
   picosat = callPackage ../applications/science/logic/picosat {};
 
   prooftree = callPackage ../applications/science/logic/prooftree {
-    inherit (ocamlPackages) findlib lablgtk;
-    camlp5 = ocamlPackages.camlp5_transitional;
+    inherit (ocamlPackages_4_01_0) ocaml findlib lablgtk;
+    camlp5 = ocamlPackages_4_01_0.camlp5_transitional;
   };
 
   prover9 = callPackage ../applications/science/logic/prover9 { };
@@ -10752,10 +12721,6 @@ let
   satallax = callPackage ../applications/science/logic/satallax {};
 
   spass = callPackage ../applications/science/logic/spass {};
-
-  ssreflect = callPackage ../applications/science/logic/ssreflect {
-    camlp5 = ocamlPackages.camlp5_transitional;
-  };
 
   tptp = callPackage ../applications/science/logic/tptp {};
 
@@ -10816,6 +12781,8 @@ let
 
   pari = callPackage ../applications/science/math/pari {};
 
+  pcalc = callPackage ../applications/science/math/pcalc { };
+
   pspp = callPackage ../applications/science/math/pssp {
     inherit (gnome) libglade gtksourceview;
   };
@@ -10854,6 +12821,8 @@ let
     inherit (pkgs.gnome) gtkglext;
   };
 
+  fityk = callPackage ../applications/science/misc/fityk { };
+
   gravit = callPackage ../applications/science/astronomy/gravit { };
 
   golly = callPackage ../applications/science/misc/golly { };
@@ -10874,9 +12843,43 @@ let
 
   tulip = callPackage ../applications/science/misc/tulip { };
 
-  vite = callPackage ../applications/science/misc/vite { };
+  vite = enableDebugging (callPackage ../applications/science/misc/vite { });
 
   xplanet = callPackage ../applications/science/astronomy/xplanet { };
+
+  ### SCIENCE / PHYSICS
+
+  geant4 = callPackage ../development/libraries/physics/geant4 {
+    enableMultiThreading = true;
+    enableG3toG4         = false;
+    enableInventor       = false;
+    enableGDML           = false;
+    enableQT             = false;
+    enableXM             = false;
+    enableOpenGLX11      = true;
+    enableRaytracerX11   = false;
+
+    # Optional system packages, otherwise internal GEANT4 packages are used.
+    clhep = null;
+    expat = expat;
+    zlib  = null;
+
+    # For enableGDML.
+    xercesc = null;
+
+    # For enableQT.
+    qt = null; # qt4SDK or qt5SDK
+
+    # For enableXM.
+    motif = null; # motif or lesstif
+
+    # For enableQT, enableXM, enableOpenGLX11, enableRaytracerX11.
+    mesa = mesa;
+    x11  = x11;
+    inherit (xlibs) libXmu;
+  };
+
+  g4py = callPackage ../development/libraries/physics/geant4/g4py { };
 
   ### MISC
 
@@ -10890,7 +12893,9 @@ let
 
   cups = callPackage ../misc/cups { libusb = libusb1; };
 
-  cups_pdf_filter = callPackage ../misc/cups/pdf-filter.nix { };
+  cups_filters = callPackage ../misc/cups/filters.nix { };
+
+  crashplan = callPackage ../applications/backup/crashplan { };
 
   gutenprint = callPackage ../misc/drivers/gutenprint { };
 
@@ -10916,9 +12921,16 @@ let
 
   ekiga = newScope pkgs.gnome ../applications/networking/instant-messengers/ekiga { };
 
+  emulationstation = callPackage ../misc/emulators/emulationstation { };
+
   electricsheep = callPackage ../misc/screensavers/electricsheep { };
 
   fakenes = callPackage ../misc/emulators/fakenes { };
+
+
+  faust = callPackage ../applications/audio/faust { };
+
+  faust-compiler = callPackage ../applications/audio/faust-compiler { };
 
   fceux = callPackage ../misc/emulators/fceux { };
 
@@ -10939,7 +12951,6 @@ let
   ghostscript = callPackage ../misc/ghostscript {
     x11Support = false;
     cupsSupport = config.ghostscript.cups or (!stdenv.isDarwin);
-    gnuFork = config.ghostscript.gnu or false;
   };
 
   ghostscriptX = appendToName "with-X" (ghostscript.override {
@@ -10957,9 +12968,9 @@ let
   hplipWithPlugin = hplip.override { withPlugin = true; };
 
   # using the new configuration style proposal which is unstable
-  jack1d = callPackage ../misc/jackaudio/jack1.nix { };
+  jack1 = callPackage ../misc/jackaudio/jack1.nix { };
 
-  jackaudio = callPackage ../misc/jackaudio { };
+  jack2 = callPackage ../misc/jackaudio { };
 
   keynav = callPackage ../tools/X11/keynav { };
 
@@ -10967,10 +12978,9 @@ let
 
   lilypond = callPackage ../misc/lilypond { guile = guile_1_8; };
 
-  martyr = callPackage ../development/libraries/martyr { };
+  mailcore2 = callPackage ../development/libraries/mailcore2 { };
 
-  maven = maven3;
-  maven3 = callPackage ../misc/maven { jdk = openjdk; };
+  martyr = callPackage ../development/libraries/martyr { };
 
   mess = callPackage ../misc/emulators/mess {
     inherit (pkgs.gnome) GConf;
@@ -10994,9 +13004,17 @@ let
 
   nixops = callPackage ../tools/package-management/nixops { };
 
+  nixopsUnstable = callPackage ../tools/package-management/nixops/unstable.nix { };
+
+  nixui = callPackage ../tools/package-management/nixui { node_webkit = node_webkit_0_11; };
+
   nix-prefetch-scripts = callPackage ../tools/package-management/nix-prefetch-scripts { };
 
+  nix-template-rpm = callPackage ../build-support/templaterpm { inherit (pythonPackages) python toposort; };
+
   nix-repl = callPackage ../tools/package-management/nix-repl { };
+
+  nix-serve = callPackage ../tools/package-management/nix-serve { };
 
   nut = callPackage ../applications/misc/nut { };
 
@@ -11027,13 +13045,15 @@ let
   lkproof = callPackage ../tools/typesetting/tex/lkproof { };
 
   mysqlWorkbench = newScope gnome ../applications/misc/mysql-workbench {
-    lua = lua5;
+    lua = lua5_1;
     inherit (pythonPackages) pexpect paramiko;
   };
 
   robomongo = callPackage ../applications/misc/robomongo { };
 
   opkg = callPackage ../tools/package-management/opkg { };
+
+  opkg-utils = callPackage ../tools/package-management/opkg-utils { };
 
   pgadmin = callPackage ../applications/misc/pgadmin { };
 
@@ -11045,7 +13065,11 @@ let
 
   pgf2 = callPackage ../tools/typesetting/tex/pgf/2.x.nix { };
 
+  pgf3 = callPackage ../tools/typesetting/tex/pgf/3.x.nix { };
+
   pgfplots = callPackage ../tools/typesetting/tex/pgfplots { };
+
+  phabricator = callPackage ../misc/phabricator { };
 
   pjsip = callPackage ../applications/networking/pjsip { };
 
@@ -11055,13 +13079,27 @@ let
 
   uae = callPackage ../misc/emulators/uae { };
 
+  fsuae = callPackage ../misc/emulators/fs-uae { };
+
   putty = callPackage ../applications/networking/remote/putty { };
 
-  retroarch = callPackage ../misc/emulators/retroarch { };
+  retroarchBare = callPackage ../misc/emulators/retroarch { };
+
+  retroarch = wrapRetroArch { retroarch = retroarchBare; };
+
+  libretro = recurseIntoAttrs (callPackage ../misc/emulators/retroarch/cores.nix {
+    retroarch = retroarchBare;
+  });
 
   rssglx = callPackage ../misc/screensavers/rss-glx { };
 
+  runit = callPackage ../tools/system/runit { };
+
+  refind = callPackage ../tools/bootloaders/refind { };
+
   xlockmore = callPackage ../misc/screensavers/xlockmore { };
+
+  sails = callPackage ../misc/sails { };
 
   samsungUnifiedLinuxDriver = import ../misc/cups/drivers/samsung {
     inherit fetchurl stdenv;
@@ -11094,6 +13132,8 @@ let
 
   slock = callPackage ../misc/screensavers/slock { };
 
+  soundOfSorting = callPackage ../misc/sound-of-sorting { };
+
   sourceAndTags = import ../misc/source-and-tags {
     inherit pkgs stdenv unzip lib ctags;
     hasktags = haskellPackages.hasktags;
@@ -11115,7 +13155,7 @@ let
     inherit builderDefs zlib bzip2 ncurses libpng ed lesstif ruby potrace
       gd t1lib freetype icu perl expat curl xz pkgconfig zziplib texinfo
       libjpeg bison python fontconfig flex poppler libpaper graphite2
-      makeWrapper;
+      makeWrapper gmp mpfr xpdf;
     inherit (xlibs) libXaw libX11 xproto libXt libXpm
       libXmu libXext xextproto libSM libICE;
     ghostscript = ghostscriptX;
@@ -11127,7 +13167,7 @@ let
   texLiveFull = lib.setName "texlive-full" (texLiveAggregationFun {
     paths = [ texLive texLiveExtra lmodern texLiveCMSuper texLiveLatexXColor
               texLivePGF texLiveBeamer texLiveModerncv tipa tex4ht texinfo
-              texLiveModerntimeline ];
+              texLiveModerntimeline texLiveContext ];
   });
 
   /* Look in configurations/misc/raskin.nix for usage example (around revisions
@@ -11180,7 +13220,11 @@ let
     inherit texLive unzip;
   };
 
+  thermald = callPackage ../tools/system/thermald { };
+
   thinkfan = callPackage ../tools/system/thinkfan { };
+
+  tup = callPackage ../development/tools/build-managers/tup { };
 
   vice = callPackage ../misc/emulators/vice {
     libX11 = xlibs.libX11;
@@ -11189,7 +13233,9 @@ let
 
   viewnior = callPackage ../applications/graphics/viewnior { };
 
-  vimPlugins = callPackage ../misc/vim-plugins { };
+  vimUtils = callPackage ../misc/vim-plugins/vim-utils.nix { inherit writeText; };
+
+  vimPlugins = recurseIntoAttrs (callPackage ../misc/vim-plugins { });
 
   vimprobable2 = callPackage ../applications/networking/browsers/vimprobable2 {
     webkit = webkitgtk2;
@@ -11198,6 +13244,10 @@ let
   vimprobable2Wrapper = wrapFirefox
     { browser = vimprobable2; browserName = "vimprobable2"; desktopName = "Vimprobable2";
     };
+
+  rekonqWrapper = wrapFirefox {
+    browser = kde4.rekonq; browserName = "rekonq"; desktopName = "Rekonq";
+  };
 
   vimb = callPackage ../applications/networking/browsers/vimb {
     webkit = webkitgtk2;
@@ -11208,6 +13258,9 @@ let
     browserName = "vimb";
     desktopName = "Vimb";
   };
+
+  vips = callPackage ../tools/graphics/vips { };
+  nip2 = callPackage ../tools/graphics/nip2 { };
 
   VisualBoyAdvance = callPackage ../misc/emulators/VisualBoyAdvance { };
 
@@ -11232,6 +13285,10 @@ let
 
   xboxdrv = callPackage ../misc/drivers/xboxdrv { };
 
+  xinput_calibrator = callPackage ../tools/X11/xinput_calibrator {
+    inherit (xlibs) libXi inputproto;
+  };
+
   xosd = callPackage ../misc/xosd { };
 
   xsane = callPackage ../applications/graphics/sane/xsane.nix {
@@ -11239,9 +13296,17 @@ let
     saneBackends = saneBackends;
   };
 
+  xwiimote = callPackage ../misc/drivers/xwiimote {
+    bluez = pkgs.bluez5.override {
+      enableWiimote = true;
+    };
+  };
+
   yafc = callPackage ../applications/networking/yafc { };
 
   yandex-disk = callPackage ../tools/filesystems/yandex-disk { };
+
+  zdfmediathk = callPackage ../applications/video/zdfmediathk { };
 
   myEnvFun = import ../misc/my-env {
     inherit substituteAll pkgs;
@@ -11278,6 +13343,13 @@ let
 
   zsnes = callPackage_i686 ../misc/emulators/zsnes { };
 
+  snes9x-gtk = callPackage ../misc/emulators/snes9x-gtk { };
+
+  higan = callPackage ../misc/emulators/higan {
+    profile = config.higan.profile or "performance";
+    guiToolkit = config.higan.guiToolkit or "gtk";
+  };
+
   misc = import ../misc/misc.nix { inherit pkgs stdenv; };
 
   bullet = callPackage ../development/libraries/bullet {};
@@ -11292,6 +13364,18 @@ let
   # Attributes for backward compatibility.
   adobeReader = adobe-reader;
   asciidocFull = asciidoc-full;  # added 2014-06-22
+  lttngTools = lttng-tools;  # added 2014-07-31
+  lttngUst = lttng-ust;  # added 2014-07-31
+  jquery_ui = jquery-ui;  # added 2014-09-07
+  youtubeDL = youtube-dl;  # added 2014-10-26
+  rdiff_backup = rdiff-backup;  # added 2014-11-23
+  htmlTidy = html-tidy;  # added 2014-12-06
+  sqliteInteractive = sqlite-interactive;  # added 2014-12-06
+  nfsUtils = nfs-utils;  # added 2014-12-06
+  buildbotSlave = buildbot-slave;  # added 2014-12-09
 
+  opentsdb = callPackage ../tools/misc/opentsdb {};
+
+  hbase = callPackage ../servers/hbase {};
 
 }; in self; in pkgs

@@ -10,10 +10,18 @@ with lib;
 
     system.sbin.modprobe = mkOption {
       internal = true;
-      default = pkgs.writeTextFile {
+      default = pkgs.stdenv.mkDerivation {
         name = "modprobe";
-        destination = "/sbin/modprobe";
-        executable = true;
+        buildCommand = ''
+          mkdir -p $out/bin
+          for i in ${pkgs.kmod}/sbin/*; do
+            name=$(basename $i)
+            echo "$text" > $out/bin/$name
+            echo 'exec '$i' "$@"' >> $out/bin/$name
+            chmod +x $out/bin/$name
+          done
+          ln -s bin $out/sbin
+        '';
         text =
           ''
             #! ${pkgs.stdenv.shell}
@@ -26,7 +34,6 @@ with lib;
                 MODULE_DIR=/run/booted-system/kernel-modules/lib/modules/
             fi
 
-            exec ${pkgs.kmod}/sbin/modprobe "$@"
           '';
       };
       description = ''
@@ -68,20 +75,20 @@ with lib;
 
   config = mkIf (!config.boot.isContainer) {
 
-    environment.etc = [
-      { source = "${pkgs.kmod-blacklist-ubuntu}/modprobe.conf";
-        target = "modprobe.d/ubuntu.conf";
-      }
-      { source = pkgs.writeText "modprobe.conf"
-          ''
-            ${flip concatMapStrings config.boot.blacklistedKernelModules (name: ''
-              blacklist ${name}
-            '')}
-            ${config.boot.extraModprobeConfig}
-          '';
-        target = "modprobe.d/nixos.conf";
-      }
-    ];
+    environment.etc."modprobe.d/ubuntu.conf".source = "${pkgs.kmod-blacklist-ubuntu}/modprobe.conf";
+
+    environment.etc."modprobe.d/nixos.conf".text =
+      ''
+        ${flip concatMapStrings config.boot.blacklistedKernelModules (name: ''
+          blacklist ${name}
+        '')}
+        ${config.boot.extraModprobeConfig}
+      '';
+    environment.etc."modprobe.d/usb-load-ehci-first.conf".text =
+      ''
+        softdep uhci_hcd pre: ehci_hcd
+        softdep ohci_hcd pre: ehci_hcd
+      '';
 
     environment.systemPackages = [ config.system.sbin.modprobe pkgs.kmod ];
 

@@ -20,6 +20,7 @@ stdenv.mkDerivation rec {
     ./dhclient.patch 
     ./fix-app-icon.patch
     ./fix-gtk-issues.patch
+    ./urwid-api-update.patch
     ];
 
   # Should I be using pygtk's propogated build inputs?
@@ -38,6 +39,8 @@ stdenv.mkDerivation rec {
     sed -i "3iexport PYTHONPATH=$(toPythonPath $out):$(toPythonPath ${pyGtkGlade})/gtk-2.0:$(toPythonPath ${pygobject}):$(toPythonPath ${pygobject})/gtk-2.0:$(toPythonPath ${pycairo}):$(toPythonPath ${pythonDBus})\$\{PYTHONPATH:+:\}\$PYTHONPATH" in/scripts=wicd-gtk.in
     sed -i "2iexport PATH=${python}/bin\$\{PATH:+:\}\$PATH" in/scripts=wicd-cli.in
     sed -i "3iexport PYTHONPATH=$(toPythonPath $out):$(toPythonPath ${pyGtkGlade})/gtk-2.0:$(toPythonPath ${pygobject}):$(toPythonPath ${pycairo}):$(toPythonPath ${pythonDBus})\$\{PYTHONPATH:+:\}\$PYTHONPATH" in/scripts=wicd-cli.in
+    sed -i "2iexport PATH=${python}/bin\$\{PATH:+:\}\$PATH" in/scripts=wicd-curses.in
+    sed -i "3iexport PYTHONPATH=$(toPythonPath $out):$(toPythonPath ${pyGtkGlade})/gtk-2.0:$(toPythonPath ${pygobject}):$(toPythonPath ${pycairo}):$(toPythonPath ${pythonDBus}):$(toPythonPath ${pythonPackages.urwid}):$(toPythonPath ${pythonPackages.curses})\$\{PYTHONPATH:+:\}\$PYTHONPATH" in/scripts=wicd-curses.in
     rm po/ast.po
   '';
 

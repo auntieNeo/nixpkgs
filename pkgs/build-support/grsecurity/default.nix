@@ -10,6 +10,7 @@ let
       mode = "auto";
       sysctl = false;
       denyChrootChmod = false;
+      denyUSB = false;
       restrictProc = false;
       restrictProcWithGroup = true;
       unrestrictProcGid = 121; # Ugh, an awful hack. See grsecurity NixOS gid
@@ -32,7 +33,7 @@ let
 
     grKernel = if cfg.stable
                then mkKernel pkgs.linux_3_14 stable-patch
-               else mkKernel pkgs.linux_3_15 test-patch;
+               else mkKernel pkgs.linux_3_18 test-patch;
 
     ## -- grsecurity configuration ---------------------------------------------
 
@@ -84,7 +85,7 @@ let
       let boolToKernOpt = b: if b then "y" else "n";
           # Disable RANDSTRUCT under virtualbox, as it has some kind of
           # breakage with the vbox guest drivers
-          #randstruct = optionalString config.services.virtualbox.enable
+          #randstruct = optionalString config.services.virtualboxGuest.enable
           #  "GRKERNSEC_RANDSTRUCT n";
 
           # Disable restricting links under the testing kernel, as something
@@ -106,6 +107,7 @@ let
 
         GRKERNSEC_SYSCTL ${boolToKernOpt cfg.config.sysctl}
         GRKERNSEC_CHROOT_CHMOD ${boolToKernOpt cfg.config.denyChrootChmod}
+        GRKERNSEC_DENYUSB ${boolToKernOpt cfg.config.denyUSB}
         GRKERNSEC_NO_RBAC ${boolToKernOpt cfg.config.disableRBAC}
         ${restrictLinks}
 

@@ -1,21 +1,19 @@
-{ stdenv, fetchurl, fetchgit, pkgconfig, cmake, libiconvOrEmpty, libintlOrEmpty
+{ stdenv, fetchurl, fetchpatch, pkgconfig, cmake, libiconvOrEmpty, libintlOrEmpty
 , zlib, curl, cairo, freetype, fontconfig, lcms, libjpeg, openjpeg
-, qt4Support ? false, qt4 ? null
+, qt4Support ? false, qt4 ? null, qt5
 }:
 
 let
-  version = "0.24.5"; # even major numbers are stable
-  sha256 = "114zfm4771iq25wa4bsg4nc2gnr6waaj8936wd23r4hc2084jrd2";
+  version = "0.28.1"; # even major numbers are stable
+  sha256 = "01pxjdbhvpxf00ncf8d9wxc8gkcqcxz59lwrpa151ah988inxkrc";
 
-  qtcairo_patches =
-    let qtcairo = fetchgit { # the version for poppler-0.24
-      url = "git://github.com/giddie/poppler-qt4-cairo-backend.git";
-      rev = "c4578cde09834e0d70873f63b1c2a410f66bb4f9";
-      sha256 = "07bs2phmp7f4mqrwqz2bgyw2gw7s00mwsm548bsikyz1cbj7fl93";
-    }; in
-      [ "${qtcairo}/0001-Cairo-backend-added-to-Qt4-wrapper.patch"
-        "${qtcairo}/0002-Setting-default-Qt4-backend-to-Cairo.patch"
-        "${qtcairo}/0003-Forcing-subpixel-rendering-in-Cairo-backend.patch" ];
+  # This is for Okular (and similar) to support subpixel rendering.
+  # It's kept from upstream because of political reasons.
+  qtcairo_patch = fetchpatch {
+    url = "https://github.com/giddie/poppler-qt4-cairo-backend/compare/"
+      + "fa1d636...b30f96c.diff"; # update to current maint...qt4-lcd
+    sha256 = "0g18y247k2vcz1n56rnfpy226f22v4r9c7pk8cf2h9l12vz2qxkm";
+  };
 
   poppler_drv = nameSuff: merge: stdenv.mkDerivation (stdenv.lib.mergeAttrsByFuncDefaultsClean [
   rec {
@@ -49,7 +47,7 @@ let
         Poppler is a PDF rendering library based on the xpdf-3.0 code base.
       '';
 
-      license = "GPLv2";
+      license = stdenv.lib.licenses.gpl2;
       platforms = stdenv.lib.platforms.all;
     };
   } merge ]); # poppler_drv
@@ -63,8 +61,8 @@ let
   poppler_glib = poppler_drv "glib" { };
 
   poppler_qt4 = poppler_drv "qt4" {
+    patches = [ qtcairo_patch ];
     propagatedBuildInputs = [ qt4 poppler_glib ];
-    patches = qtcairo_patches;
     NIX_LDFLAGS = "-lpoppler";
     postConfigure = ''
       mkdir -p "$out/lib/pkgconfig"
@@ -73,4 +71,13 @@ let
     '';
   };
 
-in { inherit poppler_glib poppler_qt4; } // poppler_glib
+  poppler_qt5 = poppler_drv "qt5" {
+    propagatedBuildInputs = [ qt5 poppler_glib ];
+    postConfigure = ''
+      mkdir -p "$out/lib/pkgconfig"
+      install -c -m 644 poppler-qt5.pc "$out/lib/pkgconfig"
+      cd qt5
+    '';
+  };
+
+in { inherit poppler_glib poppler_qt4 poppler_qt5; } // poppler_glib

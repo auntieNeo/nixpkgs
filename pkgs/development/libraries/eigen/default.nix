@@ -1,15 +1,15 @@
 {stdenv, fetchurl, cmake}:
 
 let
-  v = "3.2.1";
+  version = "3.2.3";
 in
 stdenv.mkDerivation {
-  name = "eigen-${v}";
+  name = "eigen-${version}";
   
   src = fetchurl {
-    url = "http://bitbucket.org/eigen/eigen/get/${v}.tar.bz2";
-    name = "eigen-${v}.tar.bz2";
-    sha256 = "12ljdirih9n3cf8hy00in285c2ccah7mgalmmr8gc3ldwznz5rk6";
+    url = "http://bitbucket.org/eigen/eigen/get/${version}.tar.gz";
+    name = "eigen-${version}.tar.gz";
+    sha256 = "14l5hlgxxymwyava5mx97ipyk3ma3alaj586aaz1xh1r700a7sxm";
   };
   
   nativeBuildInputs = [ cmake ];
@@ -19,5 +19,6 @@ stdenv.mkDerivation {
     license = licenses.lgpl3Plus;
     homepage = http://eigen.tuxfamily.org ;
     maintainers = with stdenv.lib.maintainers; [ sander urkud raskin ];
+    inherit version;
   };
 }

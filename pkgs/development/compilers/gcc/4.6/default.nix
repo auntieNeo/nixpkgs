@@ -46,15 +46,12 @@ assert stdenv.isDarwin -> gnused != null;
 with stdenv.lib;
 with builtins;
 
-let version = "4.6.3";
+let version = "4.6.4";
 
     # Whether building a cross-compiler for GNU/Hurd.
     crossGNU = cross != null && cross.config == "i586-pc-gnu";
 
-    patches =
-      [ # Fix building on Glibc 2.16.
-        ./siginfo_t_fix.patch
-      ]
+    patches = [ ]
       ++ optional (cross != null) ./libstdc++-target.patch
       ++ optional noSysDirs ./no-sys-dirs.patch
       # The GNAT Makefiles did not pay attention to CFLAGS_FOR_TARGET for its
@@ -232,11 +229,11 @@ stdenv.mkDerivation ({
            sed -i gcc/config/t-gnu \
                -es'|NATIVE_SYSTEM_HEADER_DIR.*$|NATIVE_SYSTEM_HEADER_DIR = ${libc}/include|g'
         ''
-    else if cross != null || stdenv.gcc.libc != null then
+    else if cross != null || stdenv.cc.libc != null then
       # On NixOS, use the right path to the dynamic linker instead of
       # `/lib/ld*.so'.
       let
-        libc = if libcCross != null then libcCross else stdenv.gcc.libc;
+        libc = if libcCross != null then libcCross else stdenv.cc.libc;
       in
         '' echo "fixing the \`GLIBC_DYNAMIC_LINKER' and \`UCLIBC_DYNAMIC_LINKER' macros..."
            for header in "gcc/config/"*-gnu.h "gcc/config/"*"/"*.h
@@ -342,7 +339,7 @@ stdenv.mkDerivation ({
     NM_FOR_TARGET = "${stdenv.cross.config}-nm";
     CXX_FOR_TARGET = "${stdenv.cross.config}-g++";
     # If we are making a cross compiler, cross != null
-    NIX_GCC_CROSS = if cross == null then "${stdenv.gccCross}" else "";
+    NIX_CC_CROSS = if cross == null then "${stdenv.ccCross}" else "";
     dontStrip = true;
     configureFlags = ''
       ${if enableMultilib then "" else "--disable-multilib"}
@@ -438,7 +435,7 @@ stdenv.mkDerivation ({
 
   meta = {
     homepage = http://gcc.gnu.org/;
-    license = "GPLv3+";  # runtime support libraries are typically LGPLv3+
+    license = stdenv.lib.licenses.gpl3Plus;  # runtime support libraries are typically LGPLv3+
     description = "GNU Compiler Collection, version ${version}"
       + (if stripped then "" else " (with debugging info)");
 
@@ -452,7 +449,6 @@ stdenv.mkDerivation ({
     '';
 
     maintainers = [
-      stdenv.lib.maintainers.ludo
       stdenv.lib.maintainers.viric
     ];
 
@@ -473,6 +469,8 @@ stdenv.mkDerivation ({
 
 # Strip kills static libs of other archs (hence cross != null)
 // optionalAttrs (!stripped || cross != null) { dontStrip = true; NIX_STRIP_DEBUG = 0; }
+
+// optionalAttrs (enableMultilib) { dontMoveLib64 = true; }
 
 // optionalAttrs langVhdl rec {
   name = "ghdl-0.29";
@@ -501,7 +499,7 @@ stdenv.mkDerivation ({
 
   meta = {
     homepage = "http://ghdl.free.fr/";
-    license = "GPLv2+";
+    license = stdenv.lib.licenses.gpl2Plus;
     description = "Complete VHDL simulator, using the GCC technology (gcc ${version})";
     maintainers = with stdenv.lib.maintainers; [viric];
     platforms = with stdenv.lib.platforms; linux;

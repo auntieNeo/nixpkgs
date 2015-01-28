@@ -1,10 +1,10 @@
 { stdenv, fetchurl, pkgconfig, geoip, ncurses, glib }:
 
 let
-  version = "0.8";
+  version = "0.8.5";
   mainSrc = fetchurl {
-    url = "http://tar.goaccess.prosoftcorp.com/goaccess-${version}.tar.gz";
-    sha256 = "a61215b1f3e82bdb50c892e843f1a85d6d85f882915d694a5672911fab955eea";
+    url = "http://tar.goaccess.io/goaccess-${version}.tar.gz";
+    sha256 = "121s1hva33nq0g5n354ln68nalv2frg8slm7n84r81bmi2wvdim4";
   };
 in
 
@@ -25,7 +25,7 @@ stdenv.mkDerivation rec {
   ];
 
   meta = {
-    description = "GoAccess is an open source real-time web log analyzer and interactive viewer that runs in a terminal in *nix systems.";
+    description = "Real-time web log analyzer and interactive viewer that runs in a terminal in *nix systems";
     homepage    = http://goaccess.prosoftcorp.com;
     license     = stdenv.lib.licenses.mit;
     platforms   = stdenv.lib.platforms.linux ++ stdenv.lib.platforms.darwin;

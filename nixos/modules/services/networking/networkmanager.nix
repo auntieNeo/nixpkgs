@@ -1,7 +1,7 @@
 { config, lib, pkgs, ... }:
 
-with lib;
 with pkgs;
+with lib;
 
 let
   cfg = config.networking.networkmanager;
@@ -52,6 +52,7 @@ let
     #!/bin/sh
     if test "$2" = "up"; then
       ${config.systemd.package}/bin/systemctl start ip-up.target
+      ${config.systemd.package}/bin/systemctl start network-online.target
     fi
   '';
 
@@ -151,7 +152,7 @@ in {
       { source = "${networkmanager_pptp}/etc/NetworkManager/VPN/nm-pptp-service.name";
         target = "NetworkManager/VPN/nm-pptp-service.name";
       }
-    ] ++ pkgs.lib.optional (cfg.appendNameservers == [] || cfg.insertNameservers == [])
+    ] ++ optional (cfg.appendNameservers == [] || cfg.insertNameservers == [])
            { source = overrideNameserversScript;
              target = "NetworkManager/dispatcher.d/02overridedns";
            };
@@ -177,8 +178,8 @@ in {
     systemd.services."networkmanager-init" = {
       description = "NetworkManager initialisation";
       wantedBy = [ "network.target" ];
-      wants = [ "NetworkManager.service" ];
-      before = [ "NetworkManager.service" ];
+      wants = [ "network-manager.service" ];
+      before = [ "network-manager.service" ];
       script = ''
         mkdir -m 700 -p /etc/NetworkManager/system-connections
         mkdir -m 755 -p ${stateDirs}
@@ -193,7 +194,7 @@ in {
     };
 
     powerManagement.resumeCommands = ''
-      systemctl restart NetworkManager
+      ${config.systemd.package}/bin/systemctl restart network-manager
     '';
 
     security.polkit.extraConfig = polkitConf;

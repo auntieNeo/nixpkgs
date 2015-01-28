@@ -1,6 +1,6 @@
 # TODO add plugins having various licenses, see http://www.vamp-plugins.org/download.html
 
-{ stdenv, fetchurl, alsaLib, bzip2, fftw, jackaudio, libX11, liblo
+{ stdenv, fetchurl, alsaLib, bzip2, fftw, jack2, libX11, liblo
 , libmad, libogg, librdf, librdf_raptor, librdf_rasqal, libsamplerate
 , libsndfile, pkgconfig, pulseaudio, qt5, redland
 , rubberband, serd, sord, vampSDK
@@ -8,12 +8,11 @@
 
 stdenv.mkDerivation rec {
   name = "sonic-visualiser-${version}";
-  version = "2.3";
+  version = "2.4.1";
 
   src = fetchurl {
-
-    url = "http://code.soundsoftware.ac.uk/attachments/download/918/${name}.tar.gz";
-    sha256 = "1f06w2rin4r2mbi00bg3nmqdi2xdy9vq4jcmfanxzj3ld66ik40c";
+    url = "http://code.soundsoftware.ac.uk/attachments/download/1185/${name}.tar.gz";
+    sha256 = "06nlha70kgrby16nyhngrv5q846xagnxdinv608v7ga7vpywwmyb";
   };
 
   buildInputs =
@@ -23,7 +22,7 @@ stdenv.mkDerivation rec {
       sord
       pkgconfig
       # optional
-      jackaudio
+      jack2
       # portaudio
       pulseaudio
       libmad

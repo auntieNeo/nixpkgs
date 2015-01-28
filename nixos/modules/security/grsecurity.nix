@@ -30,7 +30,7 @@ in
         type = types.bool;
         default = false;
         description = ''
-          Enable the stable grsecurity patch, based on Linux 3.2.
+          Enable the stable grsecurity patch, based on Linux 3.14.
         '';
       };
 
@@ -38,7 +38,7 @@ in
         type = types.bool;
         default = false;
         description = ''
-          Enable the testing grsecurity patch, based on Linux 3.13.
+          Enable the testing grsecurity patch, based on Linux 3.18.
         '';
       };
 
@@ -50,7 +50,7 @@ in
           description = ''
             grsecurity configuration mode. This specifies whether
             grsecurity is auto-configured or otherwise completely
-            manually configured. Can either by
+            manually configured. Can either be
             <literal>custom</literal> or <literal>auto</literal>.
 
             <literal>auto</literal> is recommended.
@@ -64,7 +64,7 @@ in
           description = ''
             grsecurity configuration priority. This specifies whether
             the kernel configuration should emphasize speed or
-            security. Can either by <literal>security</literal> or
+            security. Can either be <literal>security</literal> or
             <literal>performance</literal>.
           '';
         };
@@ -76,7 +76,7 @@ in
           description = ''
             grsecurity system configuration. This specifies whether
             the kernel configuration should be suitable for a Desktop
-            or a Server. Can either by <literal>server</literal> or
+            or a Server. Can either be <literal>server</literal> or
             <literal>desktop</literal>.
           '';
         };
@@ -156,6 +156,24 @@ in
           '';
         };
 
+        denyUSB = mkOption {
+          type = types.bool;
+          default = false;
+          description = ''
+            If true, then set <literal>GRKERNSEC_DENYUSB y</literal>.
+
+            This enables a sysctl with name
+            <literal>kernel.grsecurity.deny_new_usb</literal>. Setting
+            its value to <literal>1</literal> will prevent any new USB
+            devices from being recognized by the OS.  Any attempted
+            USB device insertion will be logged.
+
+            This option is intended to be used against custom USB
+            devices designed to exploit vulnerabilities in various USB
+            device drivers.
+          '';
+        };
+
         restrictProc = mkOption {
           type = types.bool;
           default = false;
@@ -226,8 +244,8 @@ in
       [ { assertion = cfg.stable || cfg.testing;
           message   = ''
             If grsecurity is enabled, you must select either the
-            stable patch (with kernel 3.2), or the testing patch (with
-            kernel 3.13) to continue.
+            stable patch (with kernel 3.14), or the testing patch (with
+            kernel 3.18) to continue.
           '';
         }
         { assertion = (cfg.stable -> !cfg.testing) || (cfg.testing -> !cfg.stable);

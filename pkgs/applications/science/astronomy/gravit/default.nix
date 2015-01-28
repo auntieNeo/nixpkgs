@@ -1,11 +1,11 @@
 { stdenv, fetchurl, SDL, SDL_ttf, SDL_image, mesa, libpng, lua5, automake, autoconf }:
 
 stdenv.mkDerivation rec {
-  name = "gravit-0.5.0";
+  name = "gravit-0.5.1";
 
   src = fetchurl {
     url = "http://gravit.slowchop.com/media/downloads/${name}.tgz";
-    sha256 = "0lyw0skrkb04s16vgz7ggswjrdxk1h23v5s85s09gjxzjp1xd3xp";
+    sha256 = "14vf7zj2bgrl96wsl3f1knsggc8h9624354ajzd72l46y09x5ky7";
   };
 
   buildInputs = [mesa SDL SDL_ttf SDL_image lua5 automake autoconf libpng];
@@ -14,8 +14,8 @@ stdenv.mkDerivation rec {
 
   meta = {
     homepage = "http://gravit.slowchop.com";
-    description = "A beautiful OpenGL-based gravity simulator";
-    license = "GPLv2";
+    description = "Beautiful OpenGL-based gravity simulator";
+    license = stdenv.lib.licenses.gpl2;
 
     longDescription = ''
       Gravit is a gravity simulator which runs under Linux, Windows and
