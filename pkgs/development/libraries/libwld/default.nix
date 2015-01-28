@@ -2,11 +2,11 @@
 
 stdenv.mkDerivation rec {
   name = "libwld-${version}";
-  version = "9ed43c65430ef0c18aa659e5f389d9cc3f7ec8d4";
+  version = "74f0deabb2a8a0f2e9c2eaebb4e36945716d8ab9";
 
   src = fetchurl {
     url = "https://github.com/michaelforney/wld/archive/${version}.tar.gz";
-    sha256 = "32033dbd032f1c4b0ad7d78254daa66e785d9183d41c462b5053405cbacab4d5";
+    sha256 = "da4f2c862958346ac54a83cf0f1cb4b9734bafbbe0844d7e15447bfcb18d97b4";
   };
 
   buildInputs = [

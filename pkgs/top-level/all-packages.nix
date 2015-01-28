@@ -5243,6 +5243,8 @@ let
     inherit (gnome) gtkdoc;
   };
 
+  libinput = callPackage ../development/libraries/libinput { };
+
   libiptcdata = callPackage ../development/libraries/libiptcdata { };
 
   libjpeg_original = callPackage ../development/libraries/libjpeg { };
@@ -6218,6 +6220,8 @@ let
   vamp = callPackage ../development/libraries/audio/vamp { };
 
   vcdimager = callPackage ../development/libraries/vcdimager { };
+
+  velox = callPackage ../applications/window-managers/velox { };
 
   vigra = callPackage ../development/libraries/vigra {
     inherit (pkgs.pythonPackages) numpy;
