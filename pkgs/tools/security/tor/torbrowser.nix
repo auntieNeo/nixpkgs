@@ -9,7 +9,7 @@ let
   torEnv = buildEnv {
     name = "tor-env";
     paths = [
-      stdenv.gcc.gcc zlib glib alsaLib dbus dbus_glib gtk atk pango freetype
+      stdenv.cc.gcc zlib glib alsaLib dbus dbus_glib gtk atk pango freetype
       fontconfig gdk_pixbuf cairo xlibs.libXrender xlibs.libX11 xlibs.libXext
       xlibs.libXt
     ];
@@ -20,18 +20,18 @@ let
 
 in stdenv.mkDerivation rec {
   name = "tor-browser-${version}";
-  version = "4.0.1";
+  version = "4.0.3";
 
   src = fetchurl {
     url = "https://archive.torproject.org/tor-package-archive/torbrowser/${version}/tor-browser-linux${bits}-${version}_en-US.tar.xz";
     sha256 = if bits == "64" then
-      "1cz36g7jfcz8xs7sa2fl44g1bxlrl0psbsx5hig6j5ydsl87vyak" else
-      "135ya109skzd4x8zhmsiwjg6d533yijbdrscm36lsplgcf7dx8l3";
+      "0x2jch8v57z59inncvmq2nr12j0f5by10mgj7sv9cabysj07xb45" else
+      "07g78gh909gcg4bqdmj1ag1kkl3707qi6l4wa9cm81r364192hha";
   };
 
   patchPhase = ''
-    patchelf --set-interpreter "$(cat $NIX_GCC/nix-support/dynamic-linker)" Browser/firefox
-    patchelf --set-interpreter "$(cat $NIX_GCC/nix-support/dynamic-linker)" Browser/TorBrowser/Tor/tor
+    patchelf --set-interpreter "$(cat $NIX_CC/nix-support/dynamic-linker)" Browser/firefox
+    patchelf --set-interpreter "$(cat $NIX_CC/nix-support/dynamic-linker)" Browser/TorBrowser/Tor/tor
   '';
 
   doCheck = true;
@@ -64,10 +64,11 @@ in stdenv.mkDerivation rec {
 
   buildInputs = [ stdenv ];
 
-  meta = with stdenv.lib; {
-    description = "Tor Browser Bundle for GNU/Linux, everything you need to safely browse the Internet";
-    homepage = https://www.torproject.org/;
-    platforms = ["i686-linux" "x86_64-linux"];
-    maintainers = [ maintainers.offline maintainers.matejc maintainers.doublec ];
+  meta = {
+    description = "Tor Browser Bundle";
+    homepage    = https://www.torproject.org/;
+    platforms   = stdenv.lib.platforms.linux;
+    maintainers = with stdenv.lib.maintainers;
+      [ offline matejc doublec thoughtpolice ];
   };
 }

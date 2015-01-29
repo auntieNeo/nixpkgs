@@ -1,6 +1,6 @@
 let lib = import ../../../lib; in lib.makeOverridable (
 
-{ system, name ? "stdenv", preHook ? "", initialPath, gcc, shell
+{ system, name ? "stdenv", preHook ? "", initialPath, cc, shell
 , allowedRequisites ? null, extraAttrs ? {}, overrides ? (pkgs: {}), config
 
 , # The `fetchurl' to use for downloading curl and its dependencies
@@ -16,6 +16,12 @@ let
 
   allowUnfree = config.allowUnfree or false || builtins.getEnv "NIXPKGS_ALLOW_UNFREE" == "1";
 
+  # Allowed licenses, defaults to no licenses
+  whitelistedLicenses = config.whitelistedLicenses or [];
+
+  # Blacklisted licenses, default to no licenses
+  blacklistedLicenses = config.blacklistedLicenses or [];
+
   # Alow granular checks to allow only some unfree packages
   # Example:
   # {pkgs, ...}:
@@ -26,15 +32,6 @@ let
   allowUnfreePredicate = config.allowUnfreePredicate or (x: false);
 
   allowBroken = config.allowBroken or false || builtins.getEnv "NIXPKGS_ALLOW_BROKEN" == "1";
-
-  forceEvalHelp = unfreeOrBroken:
-    assert (unfreeOrBroken == "Unfree" || unfreeOrBroken == "Broken");
-    ''
-      You can set
-        { nixpkgs.config.allow${unfreeOrBroken} = true; }
-      in configuration.nix to override this. If you use Nix standalone, you can add
-        { allow${unfreeOrBroken} = true; }
-      to ~/.nixpkgs/config.nix.'';
 
   unsafeGetAttrPos = builtins.unsafeGetAttrPos or (n: as: null);
 
@@ -48,7 +45,7 @@ let
       ../../build-support/setup-hooks/patch-shebangs.sh
       ../../build-support/setup-hooks/move-sbin.sh
       ../../build-support/setup-hooks/move-lib64.sh
-      gcc
+      cc
     ];
 
   # Add a utility function to produce derivations that use this
@@ -61,19 +58,76 @@ let
         else
           unsafeGetAttrPos "name" attrs;
       pos' = if pos != null then "‘" + pos.file + ":" + toString pos.line + "’" else "«unknown-file»";
+
+      throwEvalHelp = unfreeOrBroken: whatIsWrong:
+        assert (builtins.elem unfreeOrBroken [ "Unfree"
+                                               "Broken"
+                                               "BlacklistedLicense"
+                                             ]);
+        throw ''
+          Package ‘${attrs.name}’ in ${pos'} ${whatIsWrong}, refusing to evaluate.
+          For `nixos-rebuild` you can set
+            { nixpkgs.config.allow${unfreeOrBroken} = true; }
+          in configuration.nix to override this.
+          For `nix-env` you can add
+            { allow${unfreeOrBroken} = true; }
+          to ~/.nixpkgs/config.nix.
+        '';
+
+      # Check whether unfree packages are allowed and if not, whether the
+      # package has an unfree license and is not explicitely allowed by the
+      # `allowUNfreePredicate` function.
+      hasDeniedUnfreeLicense = attrs:
+        !allowUnfree &&
+        isUnfree (lib.lists.toList attrs.meta.license or []) &&
+        !allowUnfreePredicate attrs;
+
+      # Check whether two sets are mutual exclusive
+      mutualExclusive = a: b:
+        (builtins.length a) == 0 ||
+        (!(builtins.elem (builtins.head a) b) &&
+         mutualExclusive (builtins.tail a) b);
+
+      # Check whether an package has the license set
+      licenseCheckable = attr:
+        builtins.hasAttr "meta" attrs && builtins.hasAttr "license" attrs.meta;
+
+      # Check whether the license of the package is whitelisted.
+      # If the package has no license, print a warning about this and allow the
+      # package (return that it is actually whitelisted)
+      hasWhitelistedLicense = attrs:
+        if licenseCheckable attrs then
+          builtins.elem attrs.meta.license whitelistedLicenses
+        else
+          #builtins.trace "Has no license: ${attrs.name}, allowing installation"
+                         true;
+
+      # Check whether the license of the package is blacklisted.
+      # If the package has no license, print a warning about this and allow the
+      # package (return that it is actually not blacklisted)
+      hasBlacklistedLicense = attrs:
+        if licenseCheckable attrs then
+          builtins.elem attrs.meta.license blacklistedLicenses
+        else
+          #builtins.trace "Has no license: ${attrs.name}, allowing installation"
+                         false;
+
     in
-    if !allowUnfree && isUnfree (lib.lists.toList attrs.meta.license or []) && !allowUnfreePredicate attrs then
+    if !(mutualExclusive whitelistedLicenses blacklistedLicenses) then
       throw ''
-        Package ‘${attrs.name}’ in ${pos'} has an unfree license, refusing to evaluate.
-        ${forceEvalHelp "Unfree"}''
+          Package blacklist (${blacklistedLicenses}) and whitelist
+          (${whitelistedLicenses}) are not mutual exclusive.
+      ''
+    else if hasDeniedUnfreeLicense attrs &&
+            !(hasWhitelistedLicense attrs) then
+      throwEvalHelp "Unfree" "has an unfree license which is not whitelisted"
+    else if hasBlacklistedLicense attrs then
+      throwEvalHelp "BlacklistedLicense"
+                    "has a license which is blacklisted"
     else if !allowBroken && attrs.meta.broken or false then
-      throw ''
-        Package ‘${attrs.name}’ in ${pos'} is marked as broken, refusing to evaluate.
-        ${forceEvalHelp "Broken"}''
+      throwEvalHelp "Broken" "is marked as broken"
     else if !allowBroken && attrs.meta.platforms or null != null && !lib.lists.elem result.system attrs.meta.platforms then
-      throw ''
-        Package ‘${attrs.name}’ in ${pos'} is not supported on ‘${result.system}’, refusing to evaluate.
-        ${forceEvalHelp "Broken"}''
+      throwEvalHelp "Broken" "is not supported on ‘${result.system}’"
     else
       lib.addPassthru (derivation (
         (removeAttrs attrs ["meta" "passthru" "crossAttrs"])
@@ -198,7 +252,7 @@ let
 
       inherit overrides;
 
-      inherit gcc;
+      inherit cc;
     }
 
     # Propagate any extra attributes.  For instance, we use this to

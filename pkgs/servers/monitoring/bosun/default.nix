@@ -1,31 +1,21 @@
-{ stdenv, fetchgit, fetchurl, go }:
-let
-  go-fs = fetchgit {
-    url = git://github.com/rakyll/statik.git;
-    rev = "f19d7c21cd036701d42ec176b13e0946cc9591b0";
-    sha256 = "0vaa8xzkmj1dgiayg7ccrniapz4f4rhsizx2hybyc5rgmalfj9ac";
-  };
-
-in stdenv.mkDerivation rec {
+{ stdenv, fetchurl, go }:
+stdenv.mkDerivation rec {
   name = "bosun-${version}";
-  version = "20141119233013";
+  version = "20141215200935";
   src = fetchurl {
     url = "https://github.com/bosun-monitor/bosun/archive/${version}.tar.gz";
-    sha256 = "0l16g073ixk42g3jz1r0lhmvssc0k8s1vnr9pvgxs897rzpdjjm1";
+    sha256 = "1py4plx5wi4mp05g4c1aa1wa8ny538kp2p4fzhalz33zm2qxbbx9";
   };
   buildInputs = [ go ];
 
   sourceRoot = ".";
 
   buildPhase = ''
-    mkdir -p src/github.com/bosun-monitor
-    mv bosun-${version} src/github.com/bosun-monitor/bosun
-
-    mkdir -p src/github.com/rakyll
-    ln -s ${go-fs} src/github.com/rakyll/statik
+    mkdir -p src
+    mv bosun-${version} src/bosun.org
 
     export GOPATH=$PWD
-    go build -v -o bosun src/github.com/bosun-monitor/bosun/main.go
+    go build -v -o bosun src/bosun.org/cmd/bosun/main.go
   '';
 
   installPhase = ''
@@ -40,6 +30,6 @@ in stdenv.mkDerivation rec {
     '';
     homepage = http://bosun.org;
     license = licenses.mit;
-    platforms = ["x86_64-linux"];
+    platforms = platforms.unix;
   };
 }

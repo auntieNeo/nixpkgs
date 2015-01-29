@@ -8,12 +8,12 @@
 , libusb1, libexif, pciutils
 
 , python, pythonPackages, perl, pkgconfig
-, nspr, udev, krb5
+, nspr, udev, kerberos
 , utillinux, alsaLib
 , bison, gperf
 , glib, gtk, dbus_glib
 , libXScrnSaver, libXcursor, libXtst, mesa
-, protobuf, speechd, libXdamage
+, protobuf, speechd, libXdamage, cups
 
 # optional dependencies
 , libgcrypt ? null # gnomeSupport || cupsSupport
@@ -25,7 +25,7 @@
 , gnomeSupport ? false, gnome ? null
 , gnomeKeyringSupport ? false, libgnome_keyring3 ? null
 , proprietaryCodecs ? true
-, cupsSupport ? false
+, cupsSupport ? true
 , pulseSupport ? false, pulseaudio ? null
 , hiDPISupport ? false
 
@@ -109,7 +109,7 @@ let
       nspr udev
       (if useOpenSSL then openssl else nss)
       utillinux alsaLib
-      bison gperf krb5
+      bison gperf kerberos
       glib gtk dbus_glib
       libXScrnSaver libXcursor libXtst mesa
       pciutils protobuf speechd libXdamage
@@ -117,7 +117,7 @@ let
     ] ++ optional gnomeKeyringSupport libgnome_keyring3
       ++ optionals gnomeSupport [ gnome.GConf libgcrypt ]
       ++ optional enableSELinux libselinux
-      ++ optional cupsSupport libgcrypt
+      ++ optionals cupsSupport [ libgcrypt cups ]
       ++ optional pulseSupport pulseaudio;
 
     # XXX: Wait for https://crbug.com/239107 and https://crbug.com/239181 to
@@ -143,6 +143,12 @@ let
       sed -i -e '/module_path *=.*libexif.so/ {
         s|= [^;]*|= base::FilePath().AppendASCII("${libexif}/lib/libexif.so")|
       }' chrome/utility/media_galleries/image_metadata_extractor.cc
+
+      sed -i -e '/lib_loader.*Load/s!"\(libudev\.so\)!"${udev}/lib/\1!' \
+        device/udev_linux/udev?_loader.cc
+
+      sed -i -e '/libpci_loader.*Load/s!"\(libpci\.so\)!"${pciutils}/lib/\1!' \
+        gpu/config/gpu_info_collector_linux.cc
     '';
 
     gypFlags = mkGypFlags (gypFlagsUseSystemLibs // {
@@ -186,11 +192,13 @@ let
     } // (extraAttrs.gypFlags or {}));
 
     configurePhase = ''
+      # Precompile .pyc files to prevent race conditions during build
+      python -m compileall -q -f . || : # ignore errors
+
       # This is to ensure expansion of $out.
       libExecPath="${libExecPath}"
       python build/linux/unbundle/replace_gyp_files.py ${gypFlags}
       python build/gyp_chromium -f ninja --depth "$(pwd)" ${gypFlags}
-      find . -iname '*.py[co]' -delete
     '';
 
     buildPhase = let

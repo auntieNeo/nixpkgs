@@ -18,6 +18,8 @@
 , mpg123Support ? true, mpg123
 , aacSupport ? true, faad2
 , pulseaudioSupport ? true, pulseaudio
+, jackSupport ? true, jack2
+, gmeSupport ? true, game-music-emu
 , icuSupport ? true, icu
 }:
 
@@ -25,13 +27,13 @@ let
   opt = stdenv.lib.optional;
   mkFlag = c: f: if c then "--enable-${f}" else "--disable-${f}";
   major = "0.19";
-  minor = "5";
+  minor = "8";
 
 in stdenv.mkDerivation rec {
   name = "mpd-${major}.${minor}";
   src = fetchurl {
     url    = "http://www.musicpd.org/download/mpd/${major}/${name}.tar.gz";
-    sha256 = "09rhppfspzhx7jjz3rv8b71gasrkg6i9l25xm94l9sf36jgd2m33";
+    sha256 = "1qifgc20cawhjxj7skn5xg23526i15hmav56wmd7cfxv50kq4j91";
   };
 
   buildInputs = [ pkgconfig glib boost ]
@@ -57,6 +59,8 @@ in stdenv.mkDerivation rec {
     ++ opt aacSupport faad2
     ++ opt zipSupport zziplib
     ++ opt pulseaudioSupport pulseaudio
+    ++ opt jackSupport jack2
+    ++ opt gmeSupport game-music-emu
     ++ opt icuSupport icu;
 
   configureFlags =
@@ -80,8 +84,10 @@ in stdenv.mkDerivation rec {
       (mkFlag mpg123Support "mpg123")
       (mkFlag aacSupport "aac")
       (mkFlag pulseaudioSupport "pulse")
+      (mkFlag jackSupport "jack")
       (mkFlag stdenv.isDarwin "osx")
       (mkFlag icuSupport "icu")
+      (mkFlag gmeSupport "gme")
       "--enable-debug"
     ]
     ++ opt stdenv.isLinux

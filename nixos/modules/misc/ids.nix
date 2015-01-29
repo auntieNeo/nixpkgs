@@ -172,6 +172,10 @@
       kubernetes = 162;
       peerflix = 163;
       chronos = 164;
+      gitlab = 165;
+      tox-bootstrapd = 166;
+      cadvisor = 167;
+      nylon = 168;
 
       # When adding a uid, make sure it doesn't match an existing gid. And don't use uids above 399!
 
@@ -212,6 +216,7 @@
       privoxy = 32;
       disnix = 33;
       osgi = 34;
+      tor = 35;
       ghostOne = 40;
       git = 41;
       fourstore = 42;
@@ -270,6 +275,7 @@
       jenkins = 109;
       systemd-journal-gateway = 110;
       notbit = 111;
+      btsync = 113;
       monetdb = 115;
       foundationdb = 118;
       newrelic = 119;
@@ -303,11 +309,16 @@
       systemd-resolve = 153;
       systemd-timesync = 154;
       liquidsoap = 155;
-      scollector = 156;
-      bosun = 157;
-      kubernetes = 158;
+      fleet = 159;
+      scollector = 160;
+      bosun = 161;
+      kubernetes = 162;
+      gitlab = 165;
+      nylon = 166;
 
-      # When adding a gid, make sure it doesn't match an existing uid. And don't use gids above 399!
+      # When adding a gid, make sure it doesn't match an existing
+      # uid. Users and groups with the same name should have equal
+      # uids and gids. Also, don't use gids above 399!
 
       users = 100;
       nixbld = 30000;

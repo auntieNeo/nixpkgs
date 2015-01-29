@@ -1,17 +1,19 @@
-{ stdenv, fetchgit, kernel, spl_git, perl, autoconf, automake, libtool, zlib, libuuid, coreutils, utillinux }:
+{ stdenv, fetchgit, kernel, spl_git, perl, python, autoconf, automake, libtool, zlib, libuuid, coreutils, utillinux }:
 
 stdenv.mkDerivation {
-  name = "zfs-0.6.3-${kernel.version}";
+  name = "zfs-0.6.4-${kernel.version}";
 
   src = fetchgit {
     url = git://github.com/zfsonlinux/zfs.git;
-    rev = "07dabd234dd51a1e5adc5bd21cddf5b5fdc70732";
-    sha256 = "1yqsfdhyzh33aisfvwqd692n5kfgnlz7yjixd2gqn8vx9bv0dz0b";
+    rev = "74328ee18f94d27f9c802d29fdd311018dab2adf";
+    sha256 = "0ayyqbb2crki1xvibfmscav5j7g0z77ys83dx10430ljamvylwb0";
   };
 
-  patches = [ ./mount_zfs_prefix.patch ./nix-build.patch ];
+  patches = [
+    ./nix-build-git.patch
+  ];
 
-  buildInputs = [ spl_git perl autoconf automake libtool zlib libuuid coreutils ];
+  buildInputs = [ spl_git perl python autoconf automake libtool zlib libuuid coreutils ];
 
   # for zdb to get the rpath to libgcc_s, needed for pthread_cancel to work
   NIX_CFLAGS_LINK = "-lgcc_s";
@@ -28,6 +30,7 @@ stdenv.mkDerivation {
     substituteInPlace ./config/zfs-build.m4       --replace "\$sysconfdir/init.d"     "$out/etc/init.d"
     substituteInPlace ./etc/zfs/Makefile.am       --replace "\$(sysconfdir)"          "$out/etc"
     substituteInPlace ./cmd/zed/Makefile.am       --replace "\$(sysconfdir)"          "$out/etc"
+    substituteInPlace ./module/Makefile.in        --replace "/bin/cp"                 "cp"
 
     ./autogen.sh
   '';
@@ -41,6 +44,7 @@ stdenv.mkDerivation {
     "--with-udevdir=$(out)/lib/udev"
     "--with-systemdunitdir=$(out)/etc/systemd/system"
     "--with-systemdpresetdir=$(out)/etc/systemd/system-preset"
+    "--with-mounthelperdir=$(out)/sbin"
     "--sysconfdir=/etc"
     "--localstatedir=/var"
   ];

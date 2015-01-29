@@ -1,15 +1,15 @@
 { stdenv, fetchurl, perl, curl, bzip2, sqlite, openssl ? null
-, pkgconfig, boehmgc, perlPackages, bash
+, pkgconfig, boehmgc, perlPackages
 , storeDir ? "/nix/store"
 , stateDir ? "/nix/var"
 }:
 
 stdenv.mkDerivation rec {
-  name = "nix-1.8pre3919_f43a8ed";
+  name = "nix-1.9pre4021_f46e329";
 
   src = fetchurl {
-    url = http://hydra.nixos.org/build/17676230/download/4/nix-1.8pre3919_f43a8ed.tar.xz;
-    sha256 = "6837adca17a1571fb82f7db0f21230577ff5d3d9b2a5ae1e465862033c6fded4";
+    url = "http://hydra.nixos.org/build/18964230/download/4/${name}.tar.xz";
+    sha256 = "1a8njx3m8lv7w8ciag5wbl6q16k3gpf9kvv1yr9m4alc6kzm44b2";
   };
 
   nativeBuildInputs = [ perl pkgconfig ];
@@ -24,7 +24,7 @@ stdenv.mkDerivation rec {
   postUnpack =
     '' export CPATH="${bzip2}/include"
        export LIBRARY_PATH="${bzip2}/lib"
-       export CXXFLAGS="-O3 -Wno-error=reserved-user-defined-literal"
+       export CXXFLAGS="-Wno-error=reserved-user-defined-literal"
     '';
 
   configureFlags =
@@ -35,7 +35,6 @@ stdenv.mkDerivation rec {
       --with-www-curl=${perlPackages.WWWCurl}/${perl.libPrefix}
       --disable-init-state
       --enable-gc
-      CFLAGS=-O3
     '';
 
   makeFlags = "profiledir=$(out)/etc/profile.d";
@@ -58,7 +57,6 @@ stdenv.mkDerivation rec {
         --with-www-curl=${perlPackages.WWWCurl}/${perl.libPrefix}
         --disable-init-state
         --enable-gc
-        CFLAGS=-O3 CXXFLAGS=-O3
       '' + stdenv.lib.optionalString (
           stdenv.cross ? nix && stdenv.cross.nix ? system
       ) ''--with-system=${stdenv.cross.nix.system}'';

@@ -46,7 +46,7 @@ rec {
     sendEmailSupport = !stdenv.isDarwin;
   };
 
-  gitAnnex = pkgs.haskellPackages.gitAnnex;
+  gitAnnex = pkgs.haskellngPackages.git-annex;
 
   qgit = import ./qgit {
     inherit fetchurl stdenv;
@@ -73,8 +73,8 @@ rec {
   };
 
   hub = import ./hub {
-    inherit (rubyLibs) rake;
-    inherit stdenv fetchurl groff makeWrapper;
+    inherit go;
+    inherit stdenv fetchgit;
   };
 
   gitFastExport = import ./fast-export {

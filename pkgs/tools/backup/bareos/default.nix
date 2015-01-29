@@ -1,4 +1,4 @@
-{ stdenv, fetchgit, pkgconfig, nettools, gettext, readline, openssl, python
+{ stdenv, fetchFromGitHub, pkgconfig, nettools, gettext, readline, openssl, python
 , ncurses ? null
 , sqlite ? null, postgresql ? null, mysql ? null, libcap ? null
 , zlib ? null, lzo ? null, acl ? null, ceph ? null
@@ -9,12 +9,14 @@ assert sqlite != null || postgresql != null || mysql != null;
 with stdenv.lib;
 stdenv.mkDerivation rec {
   name = "bareos-${version}";
-  version = "14.2.1";
+  version = "14.2.2";
 
-  src = fetchgit {
-    url = "git://github.com/bareos/bareos";
-    rev = "refs/tags/Release/${version}";
-    sha256 = "0m7v1szi45m71zjhj3inn5hh9f4529slhiihm88rfw8006aqb6ly";
+  src = fetchFromGitHub {
+    owner = "bareos";
+    repo = "bareos";
+    rev = "Release/${version}";
+    name = "${name}-src";
+    sha256 = "12605jibvj6kdp15s8jpzb9fw1mfm53npf8ib2jfn1r4hvhdrl4j";
   };
 
   buildInputs = [

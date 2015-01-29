@@ -82,9 +82,10 @@ in
         description = ''
           This option defines the maximum number of concurrent tasks during
           one build. It affects, e.g., -j option for make. The default is 1.
-          Some builds may become non-deterministic with this option; use with
-          care! Packages will only be affected if enableParallelBuilding is
-          set for them.
+          The special value 0 means that the builder should use all
+          available CPU cores in the system. Some builds may become
+          non-deterministic with this option; use with care! Packages will
+          only be affected if enableParallelBuilding is set for them.
         '';
       };
 
@@ -225,7 +226,7 @@ in
 
       binaryCaches = mkOption {
         type = types.listOf types.str;
-        default = [ http://cache.nixos.org/ ];
+        default = [ https://cache.nixos.org/ ];
         description = ''
           List of binary cache URLs used to obtain pre-built binaries
           of Nix packages.

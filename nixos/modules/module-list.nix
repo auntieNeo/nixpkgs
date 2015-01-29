@@ -1,6 +1,7 @@
 [
   ./config/fonts/corefonts.nix
   ./config/fonts/fontconfig.nix
+  ./config/fonts/fontconfig-ultimate.nix
   ./config/fonts/fontdir.nix
   ./config/fonts/fonts.nix
   ./config/fonts/ghostscript.nix
@@ -53,8 +54,8 @@
   ./misc/version.nix
   ./programs/atop.nix
   ./programs/bash/bash.nix
-  ./programs/bash/command-not-found.nix
   ./programs/blcr.nix
+  ./programs/command-not-found/command-not-found.nix
   ./programs/dconf.nix
   ./programs/environment.nix
   ./programs/info.nix
@@ -101,6 +102,8 @@
   ./services/backup/rsnapshot.nix
   ./services/backup/sitecopy-backup.nix
   ./services/backup/tarsnap.nix
+  ./services/cluster/fleet.nix
+  ./services/cluster/kubernetes.nix
   ./services/computing/torque/server.nix
   ./services/computing/torque/mom.nix
   ./services/continuous-integration/jenkins/default.nix
@@ -134,6 +137,7 @@
   ./services/desktops/gnome3/seahorse.nix
   ./services/desktops/gnome3/sushi.nix
   ./services/desktops/gnome3/tracker.nix
+  ./services/desktops/profile-sync-daemon.nix
   ./services/desktops/telepathy.nix
   ./services/games/ghost-one.nix
   ./services/games/minecraft-server.nix
@@ -145,6 +149,7 @@
   ./services/hardware/pommed.nix
   ./services/hardware/sane.nix
   ./services/hardware/tcsd.nix
+  ./services/hardware/tlp.nix
   ./services/hardware/thinkfan.nix
   ./services/hardware/udev.nix
   ./services/hardware/udisks2.nix
@@ -173,6 +178,7 @@
   ./services/misc/etcd.nix
   ./services/misc/felix.nix
   ./services/misc/folding-at-home.nix
+  ./services/misc/gitlab.nix
   ./services/misc/gitolite.nix
   ./services/misc/gpsd.nix
   ./services/misc/mesos-master.nix
@@ -192,6 +198,7 @@
   ./services/misc/zookeeper.nix
   ./services/monitoring/apcupsd.nix
   ./services/monitoring/bosun.nix
+  ./services/monitoring/cadvisor.nix
   ./services/monitoring/collectd.nix
   ./services/monitoring/dd-agent.nix
   ./services/monitoring/graphite.nix
@@ -232,6 +239,7 @@
   ./services/networking/dnscrypt-proxy.nix
   ./services/networking/dnsmasq.nix
   ./services/networking/ejabberd.nix
+  ./services/networking/firefox/sync-server.nix
   ./services/networking/firewall.nix
   ./services/networking/flashpolicyd.nix
   ./services/networking/freenet.nix
@@ -248,6 +256,7 @@
   ./services/networking/kippo.nix
   ./services/networking/mailpile.nix
   ./services/networking/minidlna.nix
+  ./services/networking/mstpd.nix
   ./services/networking/murmur.nix
   ./services/networking/nat.nix
   ./services/networking/networkmanager.nix
@@ -256,6 +265,7 @@
   ./services/networking/nsd.nix
   ./services/networking/ntopng.nix
   ./services/networking/ntpd.nix
+  ./services/networking/nylon.nix
   ./services/networking/oidentd.nix
   ./services/networking/openfire.nix
   ./services/networking/openntpd.nix
@@ -281,6 +291,7 @@
   ./services/networking/tcpcrypt.nix
   ./services/networking/teamspeak3.nix
   ./services/networking/tftpd.nix
+  ./services/networking/tox-bootstrapd.nix
   ./services/networking/unbound.nix
   ./services/networking/unifi.nix
   ./services/networking/vsftpd.nix
@@ -299,12 +310,14 @@
   ./services/search/solr.nix
   ./services/security/clamav.nix
   ./services/security/fail2ban.nix
+  ./services/security/fprintd.nix
   ./services/security/fprot.nix
   ./services/security/frandom.nix
   ./services/security/haveged.nix
   ./services/security/torify.nix
   ./services/security/tor.nix
   ./services/security/torsocks.nix
+  ./services/system/cloud-init.nix
   ./services/system/dbus.nix
   ./services/system/kerberos.nix
   ./services/system/nscd.nix
@@ -400,7 +413,6 @@
   ./virtualisation/container-config.nix
   ./virtualisation/containers.nix
   ./virtualisation/docker.nix
-  ./virtualisation/kubernetes.nix
   ./virtualisation/libvirtd.nix
   ./virtualisation/lxc.nix
   #./virtualisation/nova.nix

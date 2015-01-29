@@ -58,11 +58,11 @@ in
 
 stdenv.mkDerivation rec {
   name = "mpv-${version}";
-  version = "0.7.0";
+  version = "0.7.2";
 
   src = fetchurl {
     url = "https://github.com/mpv-player/mpv/archive/v${version}.tar.gz";
-    sha256 = "0rz8dp44yag442gamaa2vdmf69h25gqh2bgybx89prkfh8n4hy8x";
+    sha256 = "13yswsl5xfzhzbh5fv7ds5x2wviiq8r7kp75y3zb8ni49293n23x";
   };
 
   buildInputs = with stdenv.lib;
@@ -120,7 +120,7 @@ stdenv.mkDerivation rec {
     '';
     homepage = http://mpv.io;
     license = licenses.gpl2Plus;
-    maintainers = [ maintainers.AndersonTorres ];
+    maintainers = with stdenv.lib.maintainers; [ AndersonTorres fuuzetsu ];
     platforms = platforms.linux;
   };
 }

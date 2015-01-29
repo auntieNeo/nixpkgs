@@ -10,7 +10,7 @@
 , proprietaryCodecs ? true
 , enablePepperFlash ? false
 , enableWideVine ? false
-, cupsSupport ? false
+, cupsSupport ? true
 , pulseSupport ? false
 , hiDPISupport ? false
 }:
@@ -66,7 +66,7 @@ let
 in stdenv.mkDerivation {
   name = "chromium${suffix}-${chromium.browser.version}";
 
-  buildInputs = [ makeWrapper ];
+  buildInputs = [ makeWrapper ] ++ chromium.plugins.enabledPlugins;
 
   buildCommand = let
     browserBinary = "${chromium.browser}/libexec/chromium/chromium";

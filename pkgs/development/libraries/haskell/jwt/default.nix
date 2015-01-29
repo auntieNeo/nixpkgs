@@ -2,22 +2,24 @@
 
 { cabal, aeson, base64Bytestring, cryptohash, dataDefault
 , httpTypes, HUnit, network, networkUri, QuickCheck, scientific
-, tasty, tastyHunit, tastyQuickcheck, tastyTh, text, time
-, unorderedContainers
+, semigroups, tasty, tastyHunit, tastyQuickcheck, tastyTh, text
+, time, unorderedContainers, vector
 }:
 
 cabal.mkDerivation (self: {
   pname = "jwt";
-  version = "0.4.2";
-  sha256 = "167qm37y5f3d05spr0z2jwkbm2sszz3khs6zd1p0az5q4nhq295w";
+  version = "0.5.3";
+  sha256 = "1225fa53gghfpgwhr4x269a6kygfj39fh2qdapdi9mrrvlg302i4";
   buildDepends = [
     aeson base64Bytestring cryptohash dataDefault httpTypes network
-    networkUri scientific text time unorderedContainers
+    networkUri scientific semigroups text time unorderedContainers
+    vector
   ];
   testDepends = [
     aeson base64Bytestring cryptohash dataDefault httpTypes HUnit
-    network networkUri QuickCheck scientific tasty tastyHunit
-    tastyQuickcheck tastyTh text time unorderedContainers
+    network networkUri QuickCheck scientific semigroups tasty
+    tastyHunit tastyQuickcheck tastyTh text time unorderedContainers
+    vector
   ];
   meta = {
     homepage = "https://bitbucket.org/ssaasen/haskell-jwt";

@@ -4,11 +4,11 @@
 
 stdenv.mkDerivation rec {
   name = "guitarix-${version}";
-  version = "0.32.0";
+  version = "0.32.2";
 
   src = fetchurl {
     url = "mirror://sourceforge/guitarix/guitarix2-${version}.tar.bz2";
-    sha256 = "06qxydcba1ga1l19kyqy0mk141mv6pa4wbkyh75xbwhyr65bwkc4";
+    sha256 = "0mh4ma48hc8kq3xw25y1zjcrwgsdb0scd36vzw50a1qmmnh74rgp";
   };
 
   buildInputs = [

@@ -348,7 +348,8 @@ let
           [Service]
           ${let env = cfg.globalEnvironment // def.environment;
             in concatMapStrings (n:
-              let s = "Environment=\"${n}=${env.${n}}\"\n";
+              let s = optionalString (env."${n}" != null)
+                "Environment=\"${n}=${env.${n}}\"\n";
               in if stringLength s >= 2048 then throw "The value of the environment variable ‘${n}’ in systemd service ‘${name}.service’ is too long." else s) (attrNames env)}
           ${if def.reloadIfChanged then ''
             X-ReloadIfChanged=true
@@ -694,21 +695,21 @@ in
       default = {};
       type = types.attrsOf types.optionSet;
       options = [ linkOptions ];
-      description = "Definiton of systemd network links.";
+      description = "Definition of systemd network links.";
     };
 
     systemd.network.netdevs = mkOption {
       default = {};
       type = types.attrsOf types.optionSet;
       options = [ netdevOptions ];
-      description = "Definiton of systemd network devices.";
+      description = "Definition of systemd network devices.";
     };
 
     systemd.network.networks = mkOption {
       default = {};
       type = types.attrsOf types.optionSet;
       options = [ networkOptions networkConfig ];
-      description = "Definiton of systemd networks.";
+      description = "Definition of systemd networks.";
     };
 
     systemd.network.units = mkOption {
@@ -857,6 +858,13 @@ in
       description = "Definition of systemd per-user service units.";
     };
 
+    systemd.user.timers = mkOption {
+      default = {};
+      type = types.attrsOf types.optionSet;
+      options = [ timerOptions unitConfig ];
+      description = "Definition of systemd per-user timer units.";
+    };
+
     systemd.user.sockets = mkOption {
       default = {};
       type = types.attrsOf types.optionSet;
@@ -977,8 +985,9 @@ in
       // mapAttrs' (n: v: nameValuePair "${n}.network" (networkToUnit n v)) cfg.network.networks;
 
     systemd.user.units =
-      mapAttrs' (n: v: nameValuePair "${n}.service" (serviceToUnit n v)) cfg.user.services
-      // mapAttrs' (n: v: nameValuePair "${n}.socket" (socketToUnit n v)) cfg.user.sockets;
+         mapAttrs' (n: v: nameValuePair "${n}.service" (serviceToUnit n v)) cfg.user.services
+      // mapAttrs' (n: v: nameValuePair "${n}.socket"  (socketToUnit  n v)) cfg.user.sockets
+      // mapAttrs' (n: v: nameValuePair "${n}.timer"   (timerToUnit   n v)) cfg.user.timers;
 
     system.requiredKernelConfig = map config.lib.kernelConfig.isEnabled
       [ "DEVTMPFS" "CGROUPS" "INOTIFY_USER" "SIGNALFD" "TIMERFD" "EPOLL" "NET"
