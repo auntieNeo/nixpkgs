@@ -1968,6 +1968,8 @@ let
 
   nitrogen = callPackage ../tools/X11/nitrogen {};
 
+  nkf = callPackage ../tools/text/nkf {};
+
   nlopt = callPackage ../development/libraries/nlopt {};
 
   npapi_sdk = callPackage ../development/libraries/npapi-sdk {};
