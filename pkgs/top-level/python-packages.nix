@@ -2988,6 +2988,19 @@ let
     propagatedBuildInputs = with self; [ rpkg offtrac urlgrabber fedora_cert ];
   });
 
+  fixtures = buildPythonPackage rec {
+    name = "fixtures-${version}";
+    version = "1.0.0";
+
+    src = pkgs.fetchurl {
+      url = "https://pypi.python.org/packages/source/f/fixtures/fixtures-${version}.tar.gz";
+      sha256 = "0m4zgl6dcjlxk49bkawxgmh8p9jbk8f6yigpaj1zp7yr5a3c9524";
+    };
+
+    buildInputs = with self; [ pbr pip ];
+    propagatedBuildInputs = with self; [ testtools ];
+  };
+
   fudge = buildPythonPackage rec {
     name = "fudge-0.9.6";
     src = pkgs.fetchurl {
@@ -5271,6 +5284,19 @@ let
       license = with licenses; mit;
       maintainers = with maintainers; [ nckx ];
     };
+  };
+
+  git-review = buildPythonPackage rec {
+    name = "git-review-${version}";
+    version = "1.24";
+
+    src = pkgs.fetchurl {
+      url = "https://pypi.python.org/packages/source/g/git-review/git-review-${version}.tar.gz";
+      sha256 = "0aji5zdwkbd9390hrikhzw3dw2r7vmqgfw62ac8v8c34p3j8pyi0";
+    };
+
+    buildInputs = with self; [ pbr pip ];
+    propagatedBuildInputs = with self; [ requests testrepository testtools ];
   };
 
   glance = buildPythonPackage rec {
@@ -11496,6 +11522,17 @@ let
     };
   };
 
+  python-subunit = buildPythonPackage rec {
+    name = "python-subunit-${version}";
+    version = "1.1.0";
+
+    src = pkgs.fetchurl {
+      url = "https://pypi.python.org/packages/source/p/python-subunit/python-subunit-${version}.tar.gz";
+      sha256 = "125zh5i1f21ficn8ix5q33jk87j2pfmzbw6jq5l8v0hhjrp619yr";
+    };
+
+    propagatedBuildInputs = with self; [ testscenarios testtools ];
+  };
 
   sure = buildPythonPackage rec {
     name = "sure-${version}";
@@ -11702,6 +11739,17 @@ let
     };
   };
 
+  testrepository = buildPythonPackage rec {
+    name = "testrepository-${version}";
+    version = "0.0.20";
+
+    src = pkgs.fetchurl {
+      url = "https://pypi.python.org/packages/source/t/testrepository/testrepository-${version}.tar.gz";
+      sha256 = "1ssqb07c277010i6gzzkbdd46gd9mrj0bi0i8vn560n2k2y4j93m";
+    };
+
+    propagatedBuildInputs = with self; [ fixtures python-subunit testtools ];
+  };
 
   testscenarios = buildPythonPackage rec {
     name = "testscenarios-${version}";
