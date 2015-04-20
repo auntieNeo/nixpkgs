@@ -491,6 +491,8 @@ let
 
   afl = callPackage ../tools/security/afl { };
 
+  "afpfs-fuse" = callPackage ../tools/filesystems/afpfs-fuse { };
+
   ahcpd = callPackage ../tools/networking/ahcpd { };
 
   aiccu = callPackage ../tools/networking/aiccu { };
