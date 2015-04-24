@@ -8215,6 +8215,7 @@ let
   apcupsd = callPackage ../servers/apcupsd { };
 
   asterisk = callPackage ../servers/asterisk { };
+  asterisk-testsuite = callPackage ../development/tools/misc/asterisk-testsuite { };
 
   sabnzbd = callPackage ../servers/sabnzbd { };
 

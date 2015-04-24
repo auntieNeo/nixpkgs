@@ -70,7 +70,7 @@ let
       exec ${pkgs.qemu_kvm}/bin/qemu-kvm \
           -name ${vmName} \
           -m ${toString config.virtualisation.memorySize} \
-          ${optionalString (pkgs.stdenv.system == "x86_64-linux") "-cpu kvm64"} \
+          ${optionalString (pkgs.stdenv.system == "x86_64-linux") "-cpu host"} \
           ${concatStringsSep " " config.virtualisation.qemu.networkingOptions} \
           -virtfs local,path=/nix/store,security_model=none,mount_tag=store \
           -virtfs local,path=$TMPDIR/xchg,security_model=none,mount_tag=xchg \

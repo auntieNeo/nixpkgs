@@ -47,6 +47,17 @@ stdenv.mkDerivation rec {
   # compiled into Asterisk expect ${out}/usr/lib rather than ${out}/lib.
   configureFlags = "--libdir=\${out}/lib";
 
+  menuselectFlags = "";
+  postConfigure = ''
+    if [ -n "$menuselectFlags" ]; then
+      # Scripting menuselect procedure taken from the book
+      # "Asterisk: The Definitive Guide"
+      make -C menuselect menuselect
+      make menuselect-tree
+      ./menuselect/menuselect $menuselectFlags ./menuselect.makeopts
+    fi
+  '';
+
   postInstall = ''
     # Install sample configuration files for this version of Asterisk
     make samples

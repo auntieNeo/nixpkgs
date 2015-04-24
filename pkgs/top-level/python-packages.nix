@@ -11374,6 +11374,19 @@ let
     };
   };
 
+  starpy = buildPythonPackage rec {
+    name = "starpy-${version}";
+    version = "1.0.1";
+
+    src = pkgs.fetchgit {
+      url = https://github.com/asterisk/starpy.git;
+      rev = "refs/tags/${version}";
+      sha256 = "87c43f51323127453a8ea12c28041ce1356359c3295962e07d2227401c7f3e5b";
+    };
+
+    propagatedBuildInputs = with self; [ twisted ];
+  };
+
   python_statsd = buildPythonPackage rec {
     name = "python-statsd-${version}";
     version = "1.6.0";

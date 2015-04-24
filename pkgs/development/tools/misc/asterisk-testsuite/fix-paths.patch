@@ -1,0 +1,143 @@
+Binary files asterisk-r6564/lib/python/asterisk/.ami.py.swp and asterisk-r6564-patched/lib/python/asterisk/.ami.py.swp differ
+diff -rupN asterisk-r6564/lib/python/asterisk/asterisk.py asterisk-r6564-patched/lib/python/asterisk/asterisk.py
+--- asterisk-r6564/lib/python/asterisk/asterisk.py	2015-04-20 21:01:42.129740722 -0600
++++ asterisk-r6564-patched/lib/python/asterisk/asterisk.py	2015-04-21 20:51:51.366061843 -0600
+@@ -116,6 +116,7 @@ class AsteriskProtocol(protocol.ProcessP
+     def outReceived(self, data):
+         """Override of ProcessProtocol.outReceived"""
+         self.output += data
++        LOGGER.debug("Asterisk output: %s" % (data))
+ 
+     def connectionMade(self):
+         """Override of ProcessProtocol.connectionMade"""
+@@ -203,12 +204,10 @@ class Asterisk(object):
+         # The default etc directory for Asterisk
+         default_etc_directory = os.path.join(localtest_root, "etc/asterisk")
+     else:
+-        # select tmp path with most available space
+-        best_tmp = sorted(['/tmp', '/var/tmp'], cmp=compare_free_space)[0]
+         # Base location of the temporary files created by the testsuite
+-        test_suite_root = best_tmp + "/asterisk-testsuite"
++        test_suite_root = "/tmp/asterisk-testsuite"
+         # The default etc directory for Asterisk
+-        default_etc_directory = "/etc/asterisk"
++        default_etc_directory = "@ast_etc@"
+ 
+     def __init__(self, base=None, ast_conf_options=None, host="127.0.0.1"):
+         """Construct an Asterisk instance.
+@@ -238,11 +237,7 @@ class Asterisk(object):
+             self.base = base
+         else:
+             self.base = Asterisk.test_suite_root
+-        if self.localtest_root:
+-            self.ast_binary = self.localtest_root + "/usr/sbin/asterisk"
+-        else:
+-            ast_binary = test_suite_utils.which("asterisk")
+-            self.ast_binary = ast_binary or "/usr/sbin/asterisk"
++        self.ast_binary = "@ast_binary@"
+         self.host = host
+ 
+         self._ast_conf_options = ast_conf_options
+@@ -253,7 +248,7 @@ class Asterisk(object):
+         # Find the system installed asterisk.conf
+         ast_confs = [
+             os.path.join(self.default_etc_directory, "asterisk.conf"),
+-            "/usr/local/etc/asterisk/asterisk.conf",
++            "@ast_conf@",
+         ]
+         self._ast_conf = None
+         for config in ast_confs:
+@@ -335,10 +330,13 @@ class Asterisk(object):
+         def __wait_fully_booted_error(cli_command):
+             """Errback for CLI command waitfullybooted"""
+ 
+-            timeout = 90 if self.valgrind_enabled else 5
++            timeout = 900 if self.valgrind_enabled else 500
+             if time.time() - self.__start_asterisk_time > timeout:
+                 msg = "Asterisk core waitfullybooted for %s failed" % self.host
+                 LOGGER.error(msg)
++                LOGGER.debug("Asterisk core waitfullybooted failed " +
++                             "with output '%s'" %
++                             cli_command.output)
+                 self._start_deferred.errback(Exception(msg))
+             else:
+                 msg = "Asterisk core waitfullybooted failed, attempting again"
+@@ -351,9 +349,10 @@ class Asterisk(object):
+ 
+         cmd = [
+             self.ast_binary,
+-            "-f", "-g", "-q", "-m", "-n",
++            "-f", "-g", "-q", "-m", "-n", "-vvvddd",
+             "-C", "%s" % os.path.join(self.astetcdir, "asterisk.conf")
+         ]
++        LOGGER.error(" ".join(cmd))
+ 
+         if os.getenv("VALGRIND_ENABLE") == "true":
+             valgrind_path = test_suite_utils.which('valgrind')
+@@ -517,13 +516,12 @@ class Asterisk(object):
+ 
+         self._make_directory_structure()
+ 
+-        cur_cfg_path = "%s/configs" % os.getcwd()
+-        if self._configs_installed and cfg_path == cur_cfg_path:
++        if self._configs_installed and cfg_path == "@ast_etc@":
+             return
+ 
+-        if not self._configs_installed and cfg_path != cur_cfg_path:
++        if not self._configs_installed and cfg_path != "@ast_etc@":
+             # Do a one-time installation of the base configs
+-            self.install_configs("%s/configs" % os.getcwd())
++            self.install_configs("@ast_etc@")
+             # the default modules.conf should be installed now, so append
+             # conflicts this can be overriden by a test specific modules.conf
+             self._append_modules_conf(deps)
+Binary files asterisk-r6564/lib/python/asterisk/.asterisk.py.swp and asterisk-r6564-patched/lib/python/asterisk/.asterisk.py.swp differ
+diff -rupN asterisk-r6564/lib/python/asterisk/buildoptions.py asterisk-r6564-patched/lib/python/asterisk/buildoptions.py
+--- asterisk-r6564/lib/python/asterisk/buildoptions.py	2015-04-20 21:01:42.129740722 -0600
++++ asterisk-r6564-patched/lib/python/asterisk/buildoptions.py	2015-04-21 10:51:25.439068119 -0600
+@@ -27,9 +27,7 @@ class AsteriskBuildOptions(object):
+         self._flags = {}
+ 
+         buildopts_hdr_paths = [
+-            "../include/asterisk/buildopts.h",
+-            "/usr/include/asterisk/buildopts.h",
+-            "/usr/local/include/asterisk/buildopts.h"
++            "@ast_buildopts@"
+         ]
+         if path:
+             buildopts_hdr_paths.insert(0, path)
+Binary files asterisk-r6564/lib/python/asterisk/.confbridge.py.swp and asterisk-r6564-patched/lib/python/asterisk/.confbridge.py.swp differ
+diff -rupN asterisk-r6564/lib/python/asterisk/test_case.py asterisk-r6564-patched/lib/python/asterisk/test_case.py
+--- asterisk-r6564/lib/python/asterisk/test_case.py	2015-04-20 21:01:42.128740688 -0600
++++ asterisk-r6564-patched/lib/python/asterisk/test_case.py	2015-04-23 20:12:46.788476723 -0600
+@@ -119,7 +119,7 @@ class TestCase(object):
+         self.ast = []
+         self.ami = []
+         self.fastagi = []
+-        self.reactor_timeout = 30
++        self.reactor_timeout = 100
+         self.passed = None
+         self.fail_tokens = []
+         self.timeout_id = None
+Binary files asterisk-r6564/lib/python/asterisk/.test_case.py.swp and asterisk-r6564-patched/lib/python/asterisk/.test_case.py.swp differ
+Binary files asterisk-r6564/lib/python/asterisk/.test_runner.py.swp and asterisk-r6564-patched/lib/python/asterisk/.test_runner.py.swp differ
+diff -rupN asterisk-r6564/lib/python/asterisk/version.py asterisk-r6564-patched/lib/python/asterisk/version.py
+--- asterisk-r6564/lib/python/asterisk/version.py	2015-04-20 21:01:42.131740790 -0600
++++ asterisk-r6564-patched/lib/python/asterisk/version.py	2015-04-20 21:26:48.147156322 -0600
+@@ -243,8 +243,7 @@ class AsteriskVersion(object):
+         """Obtain the version from Asterisk and return a cached version of it"""
+         if not hasattr(cls, "_asterisk_version_from_binary"):
+             version = ""
+-            ast_binary = (test_suite_utils.which("asterisk") or
+-                          "/usr/sbin/asterisk")
++            ast_binary = "@ast_binary@"
+             cmd = [
+                 ast_binary,
+                 "-V",
+Binary files asterisk-r6564/tests/agi/exit_status/.run-test.swp and asterisk-r6564-patched/tests/agi/exit_status/.run-test.swp differ
+Binary files asterisk-r6564/tests/agi/exit_status/.test-config.yaml.swp and asterisk-r6564-patched/tests/agi/exit_status/.test-config.yaml.swp differ
+Binary files asterisk-r6564/tests/apps/confbridge/confbridge_nominal/.run-test.swp and asterisk-r6564-patched/tests/apps/confbridge/confbridge_nominal/.run-test.swp differ
+Binary files asterisk-r6564/tests/apps/playback/nominal/configs/ast1/.extensions.conf.swp and asterisk-r6564-patched/tests/apps/playback/nominal/configs/ast1/.extensions.conf.swp differ
+Binary files asterisk-r6564/tests/apps/playback/nominal/.test-config.yaml.swp and asterisk-r6564-patched/tests/apps/playback/nominal/.test-config.yaml.swp differ
+Binary files asterisk-r6564/tests/apps/playback/remote_forward/.test-config.yaml.swp and asterisk-r6564-patched/tests/apps/playback/remote_forward/.test-config.yaml.swp differ
+Binary files asterisk-r6564/tests/apps/voicemail/check_voicemail_nominal/.run-test.swp and asterisk-r6564-patched/tests/apps/voicemail/check_voicemail_nominal/.run-test.swp differ
