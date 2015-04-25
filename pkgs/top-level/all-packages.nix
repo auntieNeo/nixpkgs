@@ -10700,6 +10700,8 @@ let
 
   inherit (gnome3) gitg;
 
+  git-review = callPackage ../applications/version-management/git-review { };
+
   giv = callPackage ../applications/graphics/giv {
     pcre = pcre.override { unicodeSupport = true; };
   };

@@ -4719,7 +4719,6 @@ let
     };
   });
 
-
   flask = buildPythonPackage {
     name = "flask-0.10.1";
 
@@ -5284,19 +5283,6 @@ let
       license = with licenses; mit;
       maintainers = with maintainers; [ nckx ];
     };
-  };
-
-  git-review = buildPythonPackage rec {
-    name = "git-review-${version}";
-    version = "1.24";
-
-    src = pkgs.fetchurl {
-      url = "https://pypi.python.org/packages/source/g/git-review/git-review-${version}.tar.gz";
-      sha256 = "0aji5zdwkbd9390hrikhzw3dw2r7vmqgfw62ac8v8c34p3j8pyi0";
-    };
-
-    buildInputs = with self; [ pbr pip ];
-    propagatedBuildInputs = with self; [ requests testrepository testtools ];
   };
 
   glance = buildPythonPackage rec {
@@ -7535,6 +7521,22 @@ let
     };
     doCheck = false;
   }) else null;
+
+  oslosphinx = buildPythonPackage rec {
+    name = "oslosphinx-${version}";
+    version = "2.5.0";
+
+    src = pkgs.fetchurl {
+      url = "https://pypi.python.org/packages/source/o/oslosphinx/oslosphinx-${version}.tar.gz";
+      sha256 = "0z8s0l9jd4q9ckwjffxd7i14rhggc8rifw62vp670zg8zvdjlifh";
+    };
+
+    # Tests introduce circular dependency with hacking package
+    doCheck = false;
+
+    buildInputs = with self; [ pbr pip ];
+    propagatedBuildInputs = with self; [ requests2 sphinx ];
+  };
 
   ply = buildPythonPackage (rec {
     name = "ply-3.4";
@@ -11772,11 +11774,11 @@ let
 
   testtools = buildPythonPackage rec {
     name = "testtools-${version}";
-    version = "0.9.34";
+    version = "0.9.36";
 
     src = pkgs.fetchurl {
       url = "https://pypi.python.org/packages/source/t/testtools/${name}.tar.gz";
-      sha256 = "0s6sn9h26dif2c9sayf875x622kq8jb2f4qbc6if7gwh2sssgicn";
+      sha256 = "16a4l10pdf3582m28m68m8bk5dspf02758hjh7zh64sz6bbb1890";
     };
 
     propagatedBuildInputs = with self; [ self.python_mimeparse self.extras lxml ];
