@@ -1,0 +1,14 @@
+diff -rupN scdl/scdl/__init__.py scdl-patched/scdl/__init__.py
+--- scdl/scdl/__init__.py	2015-06-10 17:47:28.000000000 -0600
++++ scdl-patched/scdl/__init__.py	2015-06-10 17:47:11.000000000 -0600
+@@ -5,8 +5,8 @@ __version__ = 'v1.3'
+ 
+ import os
+ 
+-dir_path_to_conf = os.path.join(os.path.expanduser('~'), '.config/scdl')
+-file_path_to_conf = os.path.join(os.path.expanduser('~'), '.config/scdl/scdl.cfg')
++file_path_to_conf = "@scdl_cfg@"
++dir_path_to_conf = os.path.dirname(file_path_to_conf)
+ text = """[scdl]
+ auth_token =
+ path = ."""

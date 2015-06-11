@@ -3130,6 +3130,15 @@ let
     propagatedBuildInputs = with self; [ sphinx ];
   };
 
+  fudge_1_0_3 = buildPythonPackage rec {
+    name = "fudge-1.0.3";
+    src = pkgs.fetchurl {
+      url = "https://pypi.python.org/packages/source/f/fudge/${name}.tar.gz";
+      sha256 = "f8c8bfb3c0199dd06108c0c5a80e3645c7a071e0917b1a3bc73c761800809251";
+    };
+    buildInputs = with self; [ nose nosejs ];
+    propagatedBuildInputs = with self; [ sphinx ];
+  };
 
   funcparserlib = buildPythonPackage rec {
     name = "funcparserlib-0.3.6";
@@ -11311,6 +11320,28 @@ let
     };
   };
 
+  soundcloud = buildPythonPackage rec {
+    name = "soundcloud-${version}";
+    version = "0.4.1";
+
+    src = pkgs.fetchurl {
+      url = "https://pypi.python.org/packages/source/s/soundcloud/${name}.tar.gz";
+      sha256 = "48245162338d8cad84dac8a83aeab88072816a6492339beec62a560a5dab3e89";
+    };
+
+    buildInputs = with self; [ fudge_1_0_3 ];
+    propagatedBuildInputs = with self; [ requests simplejson ];
+
+    doCheck = false;
+
+    meta = with stdenv.lib; {
+      website = https://github.com/soundcloud/soundcloud-python;
+      description = "A friendly wrapper library for the Soundcloud API";
+      maintainers = [ maintainers.auntie ];
+      license = licenses.bsd2;
+    };
+  };
+
   sqlite3dbm = buildPythonPackage rec {
     name = "sqlite3dbm-0.1.4";
     disabled = isPy3k;
@@ -13164,7 +13195,22 @@ let
     };
   };
 
+  wget = buildPythonPackage rec {
+    name = "python-wget-${version}";
+    version = "2.2";
 
+    src = pkgs.fetchurl {
+      url = "https://pypi.python.org/packages/source/w/wget/wget-${version}.tar.gz";
+      sha256 = "8b903b559b516f2732a2b86abc4027213f4293676f17a78ac13f29a93e30bb44";
+    };
+
+    meta = with stdenv.lib; {
+      description = "Pure python download utility";
+      homepage = "http://bitbucket.org/techtonik/python-wget/";
+      maintainers = with maintainers; [ auntie ];
+      license = licenses.publicDomain;
+    };
+  };
 
   willie = pythonPackages.buildPythonPackage rec {
     name = "willie-5.2.0";
@@ -15273,7 +15319,7 @@ let
 
   termcolor = buildPythonPackage rec {
     name = "termcolor-1.1.0";
-    disabled = ! isPy27;
+    disabled = !isPy27 && !isPy34;
 
     src = pkgs.fetchurl {
       url = "https://pypi.python.org/packages/source/t/termcolor/termcolor-1.1.0.tar.gz";

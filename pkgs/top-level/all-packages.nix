@@ -2729,6 +2729,8 @@ let
 
   samplicator = callPackage ../tools/networking/samplicator { };
 
+  scdl = callPackage ../tools/misc/scdl { };
+
   screen = callPackage ../tools/misc/screen { };
 
   screen-message = callPackage ../tools/X11/screen-message { };
