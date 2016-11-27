@@ -1,6 +1,7 @@
-{ stdenv, lib, fetchFromGitHub, fetchurl, jdk, ant
+{ stdenv, lib, fetchFromGitHub, fetchurl, fetchgit, jdk, ant
 , libusb, libusb1, unzip, zlib, ncurses, readline
-, withGui ? false, gtk2 ? null
+, upx, fontconfig, xorg, gcc, xdotool, xvfb_run
+, withGui ? false, gtk2 ? null, withTeensyduino ? false
 }:
 
 assert withGui -> gtk2 != null;
@@ -17,7 +18,7 @@ let
 in
 stdenv.mkDerivation rec {
   version = "1.6.12";
-  name = "arduino${stdenv.lib.optionalString (withGui == false) "-core"}-${version}";
+  name = "${if (withTeensyduino == true) then "teensyduino" else "arduino"}${stdenv.lib.optionalString (withGui == false) "-core"}-${version}";
 
   src = fetchFromGitHub {
     owner = "arduino";
@@ -26,7 +27,29 @@ stdenv.mkDerivation rec {
     sha256 = "0rz8dv1mncwx2wkafakxqdi2y0rq3f72fr57cg0z5hgdgdm89lkh";
   };
 
-  buildInputs = [ jdk ant libusb libusb1 unzip zlib ncurses5 readline ];
+#  teensyduino_src = fetchgit {
+#    url = https://github.com/PaulStoffregen/cores.git;
+#    rev = "refs/tags/1.31";
+#    sha256 = "0p9ikapklsfv29v8kywgw70wgc1h5iibcxbpc4jj2dij8cy5l3h0";
+#  };
+
+  teensyduino_src = fetchurl {
+    url = "http://www.pjrc.com/teensy/td_131/TeensyduinoInstall.linux64";
+    sha256 = "1q4wv6s0900hyv9z1mjq33fr2isscps4q3bsy0h12wi3l7ir94g9";
+  };
+
+  teensyduino_libpath = stdenv.lib.makeLibraryPath [
+    fontconfig
+    zlib
+    xorg.libXext
+    xorg.libX11
+    xorg.libXft
+    gcc.cc.lib
+  ];
+
+  buildInputs = [ jdk ant libusb libusb1 unzip zlib ncurses5 readline
+    upx xvfb_run
+  ];
   downloadSrcList = builtins.attrValues externalDownloads;
   downloadDstList = builtins.attrNames externalDownloads;
 
@@ -42,6 +65,7 @@ stdenv.mkDerivation rec {
       download_dst=(''${download_dst[@]:1})
       cp -v $file_src $file_dst
     done
+
 
     cd ./arduino-core && ant
     cd ../build && ant 
@@ -75,6 +99,45 @@ stdenv.mkDerivation rec {
         --replace '<BINARY_LOCATION>' "$out/bin/arduino" \
         --replace '<ICON_NAME>' "$out/share/arduino/icons/128x128/apps/arduino.png"
     ''}
+
+
+    ${stdenv.lib.optionalString (withTeensyduino == true) "
+    # Patch the teensyduino installer elf file
+    cp ${teensyduino_src} ./TeensyduinoInstall.linux64
+    chmod +w ./TeensyduinoInstall.linux64
+    upx -d ./TeensyduinoInstall.linux64
+    patchelf --set-interpreter $(cat $NIX_CC/nix-support/dynamic-linker) \\
+        --set-rpath \"$teensyduino_libpath\" \\
+        ./TeensyduinoInstall.linux64
+    chmod +x ./TeensyduinoInstall.linux64
+    echo $(cat $NIX_CC/nix-support/dynamic-linker)
+    echo \"$teensyduino_libpath\"
+    export HOME=$out/share/arduino
+    xvfb-run ./TeensyduinoInstall.linux64
+    DISPLAY=:99 xdotool search --class \"teensyduino\" \\
+      windowfocus \\
+      key space sleep 1 \\
+      key Tab sleep 0.4 \\
+      key Tab sleep 0.4 \\
+      key Tab sleep 0.4 \\
+      key Tab sleep 0.4 \\
+      key space sleep 1 \\
+      key Tab sleep 0.4 \\
+      key Tab sleep 0.4 \\
+      key Tab sleep 0.4 \\
+      key Tab sleep 0.4 \\
+      key space sleep 1 \\
+      key Tab sleep 0.4 \\
+      key space sleep 35
+    ls -lR .
+    false
+    # Copy teensyduino files to the libraries directory
+    find ${teensyduino_src} -mindepth 1 -maxdepth 1 -type d \\
+      -exec cp -rv '{}' ./libraries \\;
+    "}
+    pwd
+    ls -lh .
+    ls -lh ./libraries
   '';
 
   # So we don't accidentally mess with firmware files
