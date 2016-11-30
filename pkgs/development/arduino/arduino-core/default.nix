@@ -1,8 +1,9 @@
 { stdenv, lib, fetchFromGitHub, fetchurl, fetchgit, jdk, ant
 , libusb, libusb1, unzip, zlib, ncurses, readline
-, upx, fontconfig, xorg, gcc, xdotool, xvfb_run, imagemagick /* XXX */
-, atk, glib, pango, gdk_pixbuf, libpng12, expat, freetype
 , withGui ? false, gtk2 ? null, withTeensyduino ? false
+  /* Packages needed for Teensyduino */
+, upx, fontconfig, xorg, gcc, xdotool, xvfb_run
+, atk, glib, pango, gdk_pixbuf, libpng12, expat, freetype
 }:
 
 assert withGui -> gtk2 != null;
@@ -48,21 +49,13 @@ stdenv.mkDerivation rec {
     sha256 = "0rz8dv1mncwx2wkafakxqdi2y0rq3f72fr57cg0z5hgdgdm89lkh";
   };
 
-#  teensyduino_src = fetchgit {
-#    url = https://github.com/PaulStoffregen/cores.git;
-#    rev = "refs/tags/1.31";
-#    sha256 = "0p9ikapklsfv29v8kywgw70wgc1h5iibcxbpc4jj2dij8cy5l3h0";
-#  };
-
   teensyduino_src = fetchurl {
     url = "http://www.pjrc.com/teensy/td_131/TeensyduinoInstall.linux64";
     sha256 = "1q4wv6s0900hyv9z1mjq33fr2isscps4q3bsy0h12wi3l7ir94g9";
   };
 
   buildInputs = [ jdk ant libusb libusb1 unzip zlib ncurses5 readline
-    upx xvfb_run xdotool
-    imagemagick /* XXX */
-  ];
+  ] ++ stdenv.lib.optionals (withTeensyduino == true) [ upx xvfb_run xdotool ];
   downloadSrcList = builtins.attrValues externalDownloads;
   downloadDstList = builtins.attrNames externalDownloads;
 
@@ -115,7 +108,7 @@ stdenv.mkDerivation rec {
 
 
     ${stdenv.lib.optionalString (withTeensyduino == true) "
-    # Patch the teensyduino installer elf file
+    # Extract and patch the Teensyduino installer
     cp ${teensyduino_src} ./TeensyduinoInstall.linux64
     chmod +w ./TeensyduinoInstall.linux64
     upx -d ./TeensyduinoInstall.linux64
@@ -123,14 +116,18 @@ stdenv.mkDerivation rec {
         --set-rpath \"${teensy_libpath}\" \\
         ./TeensyduinoInstall.linux64
     chmod +x ./TeensyduinoInstall.linux64
-    echo $(cat $NIX_CC/nix-support/dynamic-linker)
-    echo \"$teensyduino_libpath\"
 
+    # Run the GUI-only installer in a virtual X server
+    # Script thanks to AUR package. See:
+    #   <https://aur.archlinux.org/packages/teensyduino/>
+    echo \"Running Teensyduino installer...\"
+    # Trick the GUI into using HOME as the install directory.
     export HOME=$out/share/arduino
-    echo \"Running Teensyduino installer\"
-    xvfb-run ./TeensyduinoInstall.linux64 &
+    # Run the installer in a virtual X server in memory.
+    xvfb-run -n 99 ./TeensyduinoInstall.linux64 &
     sleep 4
-    echo \"Waiting for Teensyduino to install\"
+    echo \"Waiting for Teensyduino to install (about 1 minute)...\"
+    # Control the installer GUI with xdotool.
     DISPLAY=:99 xdotool search --class \"teensyduino\" \\
       windowfocus \\
       key space sleep 1 \\
@@ -146,7 +143,10 @@ stdenv.mkDerivation rec {
       key space sleep 1 \\
       key Tab sleep 0.4 \\
       key space sleep 35 \\
-      key space sleep 2 || true
+      key space sleep 2 || true 
+
+    # Check for successful installation
+    [ -d $out/share/arduino/hardware/teensy ] || exit 1
     "}
   '';
 
@@ -176,6 +176,7 @@ stdenv.mkDerivation rec {
     ln -s ${lib.makeLibraryPath [ncurses5]}/libncursesw.so.5 $out/lib/libtinfo.so.5
 
     ${stdenv.lib.optionalString (withTeensyduino == true) "
+    # Patch the Teensy loader binary
     patchelf --debug \\
         --set-interpreter $(cat $NIX_CC/nix-support/dynamic-linker) \\
         --set-rpath \"${teensy_libpath}\" \\
@@ -188,6 +189,6 @@ stdenv.mkDerivation rec {
     homepage = http://arduino.cc/;
     license = stdenv.lib.licenses.gpl2;
     platforms = platforms.linux;
-    maintainers = with maintainers; [ antono robberer bjornfor ];
+    maintainers = with maintainers; [ antono auntie robberer bjornfor ];
   };
 }
