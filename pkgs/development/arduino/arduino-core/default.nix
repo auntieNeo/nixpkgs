@@ -1,6 +1,7 @@
 { stdenv, lib, fetchFromGitHub, fetchurl, fetchgit, jdk, ant
 , libusb, libusb1, unzip, zlib, ncurses, readline
-, upx, fontconfig, xorg, gcc, xdotool, xvfb_run
+, upx, fontconfig, xorg, gcc, xdotool, xvfb_run, imagemagick /* XXX */
+, atk, glib, pango, gdk_pixbuf, libpng12, expat, freetype
 , withGui ? false, gtk2 ? null, withTeensyduino ? false
 }:
 
@@ -15,6 +16,26 @@ let
   ;
   # abiVersion 6 is default, but we need 5 for `avrdude_bin` executable
   ncurses5 = ncurses.override { abiVersion = "5"; };
+
+  teensy_libpath = stdenv.lib.makeLibraryPath [
+    atk
+    expat
+    fontconfig
+    freetype
+    gcc.cc.lib
+    gdk_pixbuf
+    glib
+    gtk2
+    libpng12
+    libusb
+    pango
+    xorg.libSM
+    xorg.libX11
+    xorg.libXext
+    xorg.libXft
+    xorg.libXinerama
+    zlib
+  ];
 in
 stdenv.mkDerivation rec {
   version = "1.6.12";
@@ -38,17 +59,9 @@ stdenv.mkDerivation rec {
     sha256 = "1q4wv6s0900hyv9z1mjq33fr2isscps4q3bsy0h12wi3l7ir94g9";
   };
 
-  teensyduino_libpath = stdenv.lib.makeLibraryPath [
-    fontconfig
-    zlib
-    xorg.libXext
-    xorg.libX11
-    xorg.libXft
-    gcc.cc.lib
-  ];
-
   buildInputs = [ jdk ant libusb libusb1 unzip zlib ncurses5 readline
-    upx xvfb_run
+    upx xvfb_run xdotool
+    imagemagick /* XXX */
   ];
   downloadSrcList = builtins.attrValues externalDownloads;
   downloadDstList = builtins.attrNames externalDownloads;
@@ -107,13 +120,17 @@ stdenv.mkDerivation rec {
     chmod +w ./TeensyduinoInstall.linux64
     upx -d ./TeensyduinoInstall.linux64
     patchelf --set-interpreter $(cat $NIX_CC/nix-support/dynamic-linker) \\
-        --set-rpath \"$teensyduino_libpath\" \\
+        --set-rpath \"${teensy_libpath}\" \\
         ./TeensyduinoInstall.linux64
     chmod +x ./TeensyduinoInstall.linux64
     echo $(cat $NIX_CC/nix-support/dynamic-linker)
     echo \"$teensyduino_libpath\"
+
     export HOME=$out/share/arduino
-    xvfb-run ./TeensyduinoInstall.linux64
+    echo \"Running Teensyduino installer\"
+    xvfb-run ./TeensyduinoInstall.linux64 &
+    sleep 4
+    echo \"Waiting for Teensyduino to install\"
     DISPLAY=:99 xdotool search --class \"teensyduino\" \\
       windowfocus \\
       key space sleep 1 \\
@@ -128,16 +145,9 @@ stdenv.mkDerivation rec {
       key Tab sleep 0.4 \\
       key space sleep 1 \\
       key Tab sleep 0.4 \\
-      key space sleep 35
-    ls -lR .
-    false
-    # Copy teensyduino files to the libraries directory
-    find ${teensyduino_src} -mindepth 1 -maxdepth 1 -type d \\
-      -exec cp -rv '{}' ./libraries \\;
+      key space sleep 35 \\
+      key space sleep 2 || true
     "}
-    pwd
-    ls -lh .
-    ls -lh ./libraries
   '';
 
   # So we don't accidentally mess with firmware files
@@ -164,6 +174,13 @@ stdenv.mkDerivation rec {
     # avrdude_bin is linked against libtinfo.so.5
     mkdir $out/lib/
     ln -s ${lib.makeLibraryPath [ncurses5]}/libncursesw.so.5 $out/lib/libtinfo.so.5
+
+    ${stdenv.lib.optionalString (withTeensyduino == true) "
+    patchelf --debug \\
+        --set-interpreter $(cat $NIX_CC/nix-support/dynamic-linker) \\
+        --set-rpath \"${teensy_libpath}\" \\
+        $out/share/arduino/hardware/tools/teensy
+    "}
   '';
 
   meta = with stdenv.lib; {
